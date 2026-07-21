@@ -1,0 +1,92 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// One Plaid "Item" = one login at one institution (e.g. your BofA login
+// covers both checking + credit; Chase, Cap One, Ally, Robinhood are
+// each separate items since they're separate logins).
+model PlaidItem {
+  id              String   @id @default(cuid())
+  itemId          String   @unique
+  accessTokenEnc  String
+  institutionId   String?
+  institutionName String?
+  transactionsCursor String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  accounts        Account[]
+}
+
+model Account {
+  id               String   @id @default(cuid())
+  plaidItemId      String?
+  plaidAccountId   String?  @unique
+  name             String
+  officialName     String?
+  institutionName  String
+  type             String   // depository | credit | investment | loan | manual
+  subtype          String?  // checking | savings | credit card | ira | brokerage ...
+  mask             String?
+  currentBalance   Float?
+  availableBalance Float?
+  isoCurrencyCode  String?  @default("USD")
+  isManual         Boolean  @default(false)
+  archivedAt       DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  plaidItem    PlaidItem?    @relation(fields: [plaidItemId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+}
+
+model Category {
+  id           String   @id @default(cuid())
+  name         String   @unique
+  icon         String?
+  isIncome     Boolean  @default(false)
+  createdAt    DateTime @default(now())
+
+  transactions Transaction[]
+  budgets      Budget[]
+}
+
+model Transaction {
+  id                  String   @id @default(cuid())
+  plaidTransactionId  String?  @unique
+  accountId           String
+  categoryId          String?
+  amount              Float    // positive = money out, negative = money in (Plaid convention)
+  date                DateTime
+  name                String
+  merchantName        String?
+  pending              Boolean @default(false)
+  isManual            Boolean  @default(false)
+  notes               String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  account  Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  category Category? @relation(fields: [categoryId], references: [id])
+
+  @@index([accountId])
+  @@index([categoryId])
+  @@index([date])
+}
+
+model Budget {
+  id         String   @id @default(cuid())
+  categoryId String
+  month      String   // "YYYY-MM"
+  amount     Float
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([categoryId, month])
+}
