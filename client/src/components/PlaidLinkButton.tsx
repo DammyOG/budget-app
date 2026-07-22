@@ -37,9 +37,17 @@ export default function PlaidLinkButton({ onLinked }: { onLinked: () => void }) 
     [onLinked]
   );
 
+  const onExit = useCallback((err: any, metadata: any) => {
+    console.log("Plaid Link exited:", { err, metadata });
+    if (err) {
+      setError(`Plaid error: ${err.error_message || err.display_message || JSON.stringify(err)}`);
+    }
+  }, []);
+
   const { open, ready } = usePlaidLink({
     token: linkToken ?? "",
     onSuccess,
+    onExit,
   });
 
   return (
