@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { plaidClient, PLAID_PRODUCTS, PLAID_COUNTRY_CODES } from "../plaid";
+import { plaidClient, PLAID_PRODUCTS, PLAID_OPTIONAL_PRODUCTS, PLAID_COUNTRY_CODES } from "../plaid";
 import { prisma } from "../db";
 import { encrypt } from "../crypto";
 import { syncAccountsForItem } from "../services/syncAccounts";
@@ -17,6 +17,7 @@ router.post("/create_link_token", async (req, res) => {
       user: { client_user_id: LOCAL_USER_ID },
       client_name: "Budget App",
       products: PLAID_PRODUCTS,
+      optional_products: PLAID_OPTIONAL_PRODUCTS.length ? PLAID_OPTIONAL_PRODUCTS : undefined,
       country_codes: PLAID_COUNTRY_CODES,
       language: "en",
     });
