@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { usePlaidLink } from "react-plaid-link";
 import { api } from "../lib/api";
+import { PLAID_LINK_TOKEN_STORAGE_KEY } from "../lib/plaidOAuth";
 
 export default function PlaidLinkButton({ onLinked }: { onLinked: () => void }) {
   const [linkToken, setLinkToken] = useState<string | null>(null);
@@ -10,7 +11,13 @@ export default function PlaidLinkButton({ onLinked }: { onLinked: () => void }) 
   useEffect(() => {
     api
       .createLinkToken()
-      .then((res) => setLinkToken(res.linkToken))
+      .then((res) => {
+        // OAuth banks (BofA, Capital One, etc.) redirect the whole page away
+        // and back; the returning page needs this same token to resume, so
+        // it's stashed here rather than only kept in this component's state.
+        sessionStorage.setItem(PLAID_LINK_TOKEN_STORAGE_KEY, res.linkToken);
+        setLinkToken(res.linkToken);
+      })
       .catch((err) => setError(err.message));
   }, []);
 

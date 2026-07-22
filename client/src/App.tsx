@@ -3,6 +3,7 @@ import Dashboard from "./pages/Dashboard";
 import Accounts from "./pages/Accounts";
 import Transactions from "./pages/Transactions";
 import Budgets from "./pages/Budgets";
+import OAuthReturn from "./pages/OAuthReturn";
 
 const navLinkClass = ({ isActive }: { isActive: boolean }) =>
   `px-3 py-2 rounded-md text-sm font-medium ${
@@ -37,6 +38,7 @@ export default function App() {
           <Route path="/accounts" element={<Accounts />} />
           <Route path="/transactions" element={<Transactions />} />
           <Route path="/budgets" element={<Budgets />} />
+          <Route path="/oauth-return" element={<OAuthReturn />} />
         </Routes>
       </main>
     </div>

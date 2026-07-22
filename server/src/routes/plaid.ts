@@ -20,6 +20,10 @@ router.post("/create_link_token", async (req, res) => {
       optional_products: PLAID_OPTIONAL_PRODUCTS.length ? PLAID_OPTIONAL_PRODUCTS : undefined,
       country_codes: PLAID_COUNTRY_CODES,
       language: "en",
+      // Banks that use OAuth (BofA, Capital One, and most major US banks)
+      // redirect the browser away to their own login page and then back —
+      // Plaid requires a pre-registered redirect_uri to send it back to.
+      redirect_uri: process.env.PLAID_REDIRECT_URI || undefined,
     });
     res.json({ linkToken: data.link_token });
   } catch (err: any) {
