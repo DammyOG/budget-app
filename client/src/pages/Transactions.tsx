@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Account, api, Category, formatCurrency, Transaction } from "../lib/api";
+import TransactionDetailModal from "../components/TransactionDetailModal";
 
 type SortField = "date" | "amount" | "name";
 type SortDirection = "asc" | "desc";
@@ -18,6 +19,7 @@ export default function Transactions() {
     categoryId: string;
     categoryName: string;
   } | null>(null);
+  const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
 
   // Advanced filters
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -352,14 +354,18 @@ export default function Transactions() {
           </thead>
           <tbody className="divide-y">
             {transactions.map((tx) => (
-              <tr key={tx.id}>
+              <tr
+                key={tx.id}
+                className="hover:bg-gray-50 cursor-pointer transition-colors"
+                onClick={() => setSelectedTransaction(tx)}
+              >
                 <td className="px-4 py-2 whitespace-nowrap">{new Date(tx.date).toLocaleDateString()}</td>
                 <td className="px-4 py-2">
                   {tx.name}
                   {tx.pending && <span className="ml-2 text-xs text-amber-600">pending</span>}
                 </td>
                 <td className="px-4 py-2 text-slate-500">{tx.account?.name}</td>
-                <td className="px-4 py-2">
+                <td className="px-4 py-2" onClick={(e) => e.stopPropagation()}>
                   <select
                     value={tx.categoryId ?? ""}
                     onChange={(e) => updateCategory(tx, e.target.value)}
@@ -388,6 +394,19 @@ export default function Transactions() {
           </tbody>
         </table>
       </div>
+
+      {/* Transaction Detail Modal */}
+      {selectedTransaction && (
+        <TransactionDetailModal
+          transaction={selectedTransaction}
+          categories={categories}
+          onClose={() => setSelectedTransaction(null)}
+          onUpdate={() => {
+            setSelectedTransaction(null);
+            load();
+          }}
+        />
+      )}
     </div>
   );
 }

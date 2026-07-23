@@ -17,6 +17,7 @@ import {
   AreaChart,
 } from "recharts";
 import { api, formatCurrency, type IncomeSpendingSummary, type Transaction, type Category } from "../lib/api";
+import TransactionDetailModal from "../components/TransactionDetailModal";
 
 type DateRange = "month" | "year" | "all-time" | "custom";
 
@@ -44,6 +45,7 @@ export default function IncomeSpending() {
   const [categoryTransactions, setCategoryTransactions] = useState<Record<string, Transaction[]>>({});
   const [allCategories, setAllCategories] = useState<Category[]>([]);
   const [processing, setProcessing] = useState(false);
+  const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
 
   useEffect(() => {
     loadData();
@@ -719,7 +721,11 @@ export default function IncomeSpending() {
                           <>
                             <div className="divide-y">
                               {transactions.map((tx) => (
-                                <div key={tx.id} className="p-3 flex items-center justify-between gap-4">
+                                <div
+                                  key={tx.id}
+                                  className="p-3 flex items-center justify-between gap-4 hover:bg-gray-100 cursor-pointer transition-colors"
+                                  onClick={() => setSelectedTransaction(tx)}
+                                >
                                   <div className="flex-1 min-w-0">
                                     <div className="text-sm font-medium text-gray-900 truncate">{tx.name}</div>
                                     <div className="text-xs text-gray-500">
@@ -729,7 +735,10 @@ export default function IncomeSpending() {
                                   <div className="flex items-center gap-3">
                                     <select
                                       value={tx.categoryId ?? ""}
-                                      onChange={(e) => updateTransactionCategory(tx.id, e.target.value || null, key)}
+                                      onChange={(e) => {
+                                        e.stopPropagation();
+                                        updateTransactionCategory(tx.id, e.target.value || null, key);
+                                      }}
                                       className="text-xs border rounded px-2 py-1"
                                       onClick={(e) => e.stopPropagation()}
                                     >
@@ -805,7 +814,11 @@ export default function IncomeSpending() {
                           <>
                             <div className="divide-y">
                               {transactions.map((tx) => (
-                                <div key={tx.id} className="p-3 flex items-center justify-between gap-4">
+                                <div
+                                  key={tx.id}
+                                  className="p-3 flex items-center justify-between gap-4 hover:bg-gray-100 cursor-pointer transition-colors"
+                                  onClick={() => setSelectedTransaction(tx)}
+                                >
                                   <div className="flex-1 min-w-0">
                                     <div className="text-sm font-medium text-gray-900 truncate">{tx.name}</div>
                                     <div className="text-xs text-gray-500">
@@ -815,7 +828,10 @@ export default function IncomeSpending() {
                                   <div className="flex items-center gap-3">
                                     <select
                                       value={tx.categoryId ?? ""}
-                                      onChange={(e) => updateTransactionCategory(tx.id, e.target.value || null, key)}
+                                      onChange={(e) => {
+                                        e.stopPropagation();
+                                        updateTransactionCategory(tx.id, e.target.value || null, key);
+                                      }}
                                       className="text-xs border rounded px-2 py-1"
                                       onClick={(e) => e.stopPropagation()}
                                     >
@@ -848,6 +864,21 @@ export default function IncomeSpending() {
           )}
         </div>
       </div>
+
+      {/* Transaction Detail Modal */}
+      {selectedTransaction && (
+        <TransactionDetailModal
+          transaction={selectedTransaction}
+          categories={allCategories}
+          onClose={() => setSelectedTransaction(null)}
+          onUpdate={() => {
+            setSelectedTransaction(null);
+            loadData();
+            // Clear cached transactions to force reload
+            setCategoryTransactions({});
+          }}
+        />
+      )}
     </div>
   );
 }
