@@ -49,6 +49,9 @@ export default function IncomeSpending() {
 
   useEffect(() => {
     loadData();
+    // Clear cached category transactions when date range changes
+    setCategoryTransactions({});
+    setExpandedCategories(new Set());
   }, [dateRange, selectedMonth, selectedYear, customStart, customEnd]);
 
   useEffect(() => {
@@ -153,23 +156,36 @@ export default function IncomeSpending() {
       newExpanded.add(key);
       setExpandedCategories(newExpanded);
 
-      // Load transactions for this category if not already loaded
-      if (!categoryTransactions[key]) {
-        const params = getDateRangeParams();
-        const transactionsParams: Record<string, string> = {
-          categoryId: categoryId || "uncategorized",
-        };
-        if (params.startDate) transactionsParams.startDate = params.startDate;
-        if (params.endDate) transactionsParams.endDate = params.endDate;
+      // Always reload transactions when expanding (to ensure we get fresh data)
+      const params = getDateRangeParams();
+      const transactionsParams: Record<string, string> = {
+        categoryId: categoryId || "uncategorized",
+        limit: "10000", // Load all transactions, not just 500
+      };
+      if (params.startDate) transactionsParams.startDate = params.startDate;
+      if (params.endDate) transactionsParams.endDate = params.endDate;
 
-        try {
-          const transactions = await api.getTransactions(transactionsParams);
-          // Filter by income/expense
-          const filtered = transactions.filter((t) => (isIncome ? t.amount < 0 : t.amount > 0));
-          setCategoryTransactions((prev) => ({ ...prev, [key]: filtered }));
-        } catch (err) {
-          console.error("Failed to load transactions:", err);
-        }
+      try {
+        const transactions = await api.getTransactions(transactionsParams);
+        // Filter by income/expense and ensure they match the category
+        const filtered = transactions.filter((t) => {
+          // Check if it's income or expense
+          const isCorrectType = isIncome ? t.amount < 0 : t.amount > 0;
+          // Check if category matches (or both are null for uncategorized)
+          const isCategoryMatch = categoryId ? t.categoryId === categoryId : !t.categoryId;
+          return isCorrectType && isCategoryMatch;
+        });
+
+        console.log(`Loaded ${filtered.length} transactions for ${key}:`, filtered.map(t => ({
+          name: t.name,
+          amount: t.amount,
+          date: t.date,
+          categoryId: t.categoryId
+        })));
+
+        setCategoryTransactions((prev) => ({ ...prev, [key]: filtered }));
+      } catch (err) {
+        console.error("Failed to load transactions:", err);
       }
     }
   }
