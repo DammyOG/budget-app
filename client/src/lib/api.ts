@@ -96,6 +96,31 @@ export interface TransferPair {
   confidence: "high" | "medium" | "low";
 }
 
+export interface RecurringTransaction {
+  name: string;
+  merchantName: string | null;
+  categoryId: string | null;
+  categoryName: string | null;
+  frequency: "weekly" | "biweekly" | "monthly" | "quarterly" | "yearly";
+  averageAmount: number;
+  count: number;
+  lastDate: string;
+  nextExpectedDate: string;
+  transactions: {
+    id: string;
+    amount: number;
+    date: string;
+    accountName: string;
+  }[];
+}
+
+export interface RecurringStats {
+  total: number;
+  monthlySubscriptions: number;
+  totalMonthlyExpenses: number;
+  totalRecurringMonthlyEquivalent: number;
+}
+
 export const api = {
   createLinkToken: () => request<{ linkToken: string }>("/plaid/create_link_token", { method: "POST" }),
   exchangePublicToken: (publicToken: string) =>
@@ -157,6 +182,9 @@ export const api = {
       body: JSON.stringify({ transactionId }),
     }),
   autoLinkTransfers: () => request<{ total: number; linked: number; zelleFixed?: number }>("/transfers/auto-link", { method: "POST" }),
+
+  getRecurringTransactions: () => request<RecurringTransaction[]>("/recurring"),
+  getRecurringStats: () => request<RecurringStats>("/recurring/stats"),
 };
 
 export function formatCurrency(value: number | null | undefined): string {

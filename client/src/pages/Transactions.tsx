@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
 import { Account, api, Category, formatCurrency, Transaction } from "../lib/api";
 
+type SortField = "date" | "amount" | "name";
+type SortDirection = "asc" | "desc";
+
 export default function Transactions() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -16,12 +19,64 @@ export default function Transactions() {
     categoryName: string;
   } | null>(null);
 
+  // Advanced filters
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [minAmount, setMinAmount] = useState("");
+  const [maxAmount, setMaxAmount] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [showPendingOnly, setShowPendingOnly] = useState(false);
+  const [sortField, setSortField] = useState<SortField>("date");
+  const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
+
   const load = () => {
     const params: Record<string, string> = {};
     if (accountId) params.accountId = accountId;
     if (categoryId) params.categoryId = categoryId;
     if (search) params.search = search;
-    api.getTransactions(params).then(setTransactions).catch((err) => setError(err.message));
+    if (startDate) params.startDate = startDate;
+    if (endDate) params.endDate = endDate;
+
+    api.getTransactions(params)
+      .then((txs) => {
+        // Apply client-side filters
+        let filtered = txs;
+
+        // Amount filters
+        if (minAmount) {
+          const min = Number(minAmount);
+          filtered = filtered.filter((t) => Math.abs(t.amount) >= min);
+        }
+        if (maxAmount) {
+          const max = Number(maxAmount);
+          filtered = filtered.filter((t) => Math.abs(t.amount) <= max);
+        }
+
+        // Pending filter
+        if (showPendingOnly) {
+          filtered = filtered.filter((t) => t.pending);
+        }
+
+        // Sorting
+        filtered.sort((a, b) => {
+          let comparison = 0;
+          switch (sortField) {
+            case "date":
+              comparison = new Date(a.date).getTime() - new Date(b.date).getTime();
+              break;
+            case "amount":
+              comparison = Math.abs(a.amount) - Math.abs(b.amount);
+              break;
+            case "name":
+              comparison = a.name.localeCompare(b.name);
+              break;
+          }
+          return sortDirection === "asc" ? comparison : -comparison;
+        });
+
+        setTransactions(filtered);
+      })
+      .catch((err) => setError(err.message));
   };
 
   useEffect(() => {
@@ -29,7 +84,7 @@ export default function Transactions() {
     api.getCategories().then(setCategories);
   }, []);
 
-  useEffect(load, [accountId, categoryId, search]);
+  useEffect(load, [accountId, categoryId, search, startDate, endDate, minAmount, maxAmount, showPendingOnly, sortField, sortDirection]);
 
   const updateCategory = async (tx: Transaction, newCategoryId: string) => {
     await api.updateTransaction(tx.id, { categoryId: newCategoryId || null });
@@ -125,30 +180,161 @@ export default function Transactions() {
         </div>
       )}
 
-      <div className="flex flex-wrap gap-3">
-        <input
-          placeholder="Search…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="rounded border px-3 py-1.5 text-sm"
-        />
-        <select value={accountId} onChange={(e) => setAccountId(e.target.value)} className="rounded border px-3 py-1.5 text-sm">
-          <option value="">All accounts</option>
-          {accounts.map((a) => (
-            <option key={a.id} value={a.id}>
-              {a.institutionName} · {a.name}
-            </option>
-          ))}
-        </select>
-        <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} className="rounded border px-3 py-1.5 text-sm">
-          <option value="">All categories</option>
-          <option value="uncategorized">Uncategorized</option>
-          {categories.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </select>
+      <div className="bg-white rounded-lg border p-4 space-y-4">
+        {/* Basic Filters */}
+        <div className="flex flex-wrap gap-3">
+          <input
+            placeholder="Search transactions…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="rounded border px-3 py-1.5 text-sm flex-1 min-w-[200px]"
+          />
+          <select value={accountId} onChange={(e) => setAccountId(e.target.value)} className="rounded border px-3 py-1.5 text-sm">
+            <option value="">All accounts</option>
+            {accounts.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.institutionName} · {a.name}
+              </option>
+            ))}
+          </select>
+          <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} className="rounded border px-3 py-1.5 text-sm">
+            <option value="">All categories</option>
+            <option value="uncategorized">Uncategorized</option>
+            {categories.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+          <button
+            onClick={() => setShowAdvanced(!showAdvanced)}
+            className={`px-3 py-1.5 text-sm rounded border ${
+              showAdvanced ? "bg-indigo-50 border-indigo-300 text-indigo-700" : "bg-white border-gray-300 text-gray-700"
+            } hover:bg-gray-50`}
+          >
+            {showAdvanced ? "⬆ Hide" : "⬇ More"} Filters
+          </button>
+        </div>
+
+        {/* Advanced Filters */}
+        {showAdvanced && (
+          <div className="border-t pt-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Amount Range</label>
+              <div className="flex gap-2 items-center">
+                <input
+                  type="number"
+                  placeholder="Min"
+                  value={minAmount}
+                  onChange={(e) => setMinAmount(e.target.value)}
+                  className="rounded border px-2 py-1 text-sm w-full"
+                />
+                <span className="text-gray-500">to</span>
+                <input
+                  type="number"
+                  placeholder="Max"
+                  value={maxAmount}
+                  onChange={(e) => setMaxAmount(e.target.value)}
+                  className="rounded border px-2 py-1 text-sm w-full"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Date Range</label>
+              <div className="flex gap-2 items-center">
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  className="rounded border px-2 py-1 text-sm w-full"
+                />
+                <span className="text-gray-500">to</span>
+                <input
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  className="rounded border px-2 py-1 text-sm w-full"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Sort By</label>
+              <div className="flex gap-2">
+                <select
+                  value={sortField}
+                  onChange={(e) => setSortField(e.target.value as SortField)}
+                  className="rounded border px-2 py-1 text-sm flex-1"
+                >
+                  <option value="date">Date</option>
+                  <option value="amount">Amount</option>
+                  <option value="name">Name</option>
+                </select>
+                <button
+                  onClick={() => setSortDirection(sortDirection === "asc" ? "desc" : "asc")}
+                  className="px-3 py-1 text-sm rounded border bg-white hover:bg-gray-50"
+                  title={sortDirection === "asc" ? "Ascending" : "Descending"}
+                >
+                  {sortDirection === "asc" ? "↑" : "↓"}
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Status</label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={showPendingOnly}
+                  onChange={(e) => setShowPendingOnly(e.target.checked)}
+                  className="rounded"
+                />
+                <span className="text-sm text-gray-700">Show pending only</span>
+              </label>
+            </div>
+
+            <div className="flex items-end">
+              <button
+                onClick={() => {
+                  setMinAmount("");
+                  setMaxAmount("");
+                  setStartDate("");
+                  setEndDate("");
+                  setShowPendingOnly(false);
+                  setSortField("date");
+                  setSortDirection("desc");
+                  setSearch("");
+                  setAccountId("");
+                  setCategoryId("");
+                }}
+                className="px-4 py-1.5 text-sm rounded border border-gray-300 bg-white hover:bg-gray-50 text-gray-700"
+              >
+                Clear All Filters
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Active Filters Summary */}
+        <div className="flex flex-wrap gap-2 items-center text-xs">
+          {(search || accountId || categoryId || minAmount || maxAmount || startDate || endDate || showPendingOnly) && (
+            <span className="text-gray-500">Active filters:</span>
+          )}
+          {search && <span className="px-2 py-0.5 bg-indigo-100 text-indigo-800 rounded">Search: "{search}"</span>}
+          {accountId && <span className="px-2 py-0.5 bg-indigo-100 text-indigo-800 rounded">Account</span>}
+          {categoryId && <span className="px-2 py-0.5 bg-indigo-100 text-indigo-800 rounded">Category</span>}
+          {minAmount && <span className="px-2 py-0.5 bg-indigo-100 text-indigo-800 rounded">Min: ${minAmount}</span>}
+          {maxAmount && <span className="px-2 py-0.5 bg-indigo-100 text-indigo-800 rounded">Max: ${maxAmount}</span>}
+          {startDate && <span className="px-2 py-0.5 bg-indigo-100 text-indigo-800 rounded">From: {startDate}</span>}
+          {endDate && <span className="px-2 py-0.5 bg-indigo-100 text-indigo-800 rounded">To: {endDate}</span>}
+          {showPendingOnly && <span className="px-2 py-0.5 bg-indigo-100 text-indigo-800 rounded">Pending only</span>}
+          {transactions.length > 0 && (
+            <span className="ml-auto text-gray-600 font-medium">
+              Showing {transactions.length} transaction{transactions.length !== 1 ? "s" : ""}
+            </span>
+          )}
+        </div>
       </div>
 
       {error && <p className="text-sm text-red-600">{error}</p>}

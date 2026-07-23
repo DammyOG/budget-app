@@ -1,7 +1,30 @@
 import { useEffect, useState } from "react";
+import {
+  LineChart,
+  Line,
+  BarChart,
+  Bar,
+  PieChart,
+  Pie,
+  Cell,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+  Area,
+  AreaChart,
+} from "recharts";
 import { api, formatCurrency, type IncomeSpendingSummary, type Transaction, type Category } from "../lib/api";
 
 type DateRange = "month" | "year" | "all-time" | "custom";
+
+const COLORS = [
+  "#6366f1", "#22c55e", "#f59e0b", "#ef4444", "#06b6d4",
+  "#a855f7", "#ec4899", "#84cc16", "#14b8a6", "#f97316",
+  "#8b5cf6", "#10b981", "#f59e0b", "#dc2626", "#0891b2"
+];
 
 export default function IncomeSpending() {
   const [data, setData] = useState<IncomeSpendingSummary | null>(null);
@@ -376,6 +399,233 @@ export default function IncomeSpending() {
           </p>
         </div>
       </div>
+
+      {/* Charts Section */}
+      {data.byMonth && data.byMonth.length > 1 && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+          {/* Spending Trends Chart */}
+          <div className="bg-white p-6 rounded-lg shadow">
+            <h2 className="text-xl font-bold mb-4">Spending Trends</h2>
+            <ResponsiveContainer width="100%" height={300}>
+              <AreaChart data={data.byMonth}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis
+                  dataKey="month"
+                  tickFormatter={(value) => {
+                    const [year, month] = value.split("-");
+                    return new Date(parseInt(year), parseInt(month) - 1).toLocaleDateString("en-US", {
+                      month: "short",
+                      year: "2-digit",
+                    });
+                  }}
+                />
+                <YAxis tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`} />
+                <Tooltip
+                  formatter={(value: number) => formatCurrency(value)}
+                  labelFormatter={(label) => formatMonth(label)}
+                />
+                <Legend />
+                <Area
+                  type="monotone"
+                  dataKey="income"
+                  stackId="1"
+                  stroke="#22c55e"
+                  fill="#86efac"
+                  name="Income"
+                />
+                <Area
+                  type="monotone"
+                  dataKey="expenses"
+                  stackId="2"
+                  stroke="#ef4444"
+                  fill="#fca5a5"
+                  name="Expenses"
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+
+          {/* Income vs Expenses Bar Chart */}
+          <div className="bg-white p-6 rounded-lg shadow">
+            <h2 className="text-xl font-bold mb-4">Income vs Expenses</h2>
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={data.byMonth}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis
+                  dataKey="month"
+                  tickFormatter={(value) => {
+                    const [year, month] = value.split("-");
+                    return new Date(parseInt(year), parseInt(month) - 1).toLocaleDateString("en-US", {
+                      month: "short",
+                    });
+                  }}
+                />
+                <YAxis tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`} />
+                <Tooltip
+                  formatter={(value: number) => formatCurrency(value)}
+                  labelFormatter={(label) => formatMonth(label)}
+                />
+                <Legend />
+                <Bar dataKey="income" fill="#22c55e" name="Income" />
+                <Bar dataKey="expenses" fill="#ef4444" name="Expenses" />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+
+          {/* Net Income Trend */}
+          <div className="bg-white p-6 rounded-lg shadow">
+            <h2 className="text-xl font-bold mb-4">Net Income Trend</h2>
+            <ResponsiveContainer width="100%" height={300}>
+              <LineChart data={data.byMonth}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis
+                  dataKey="month"
+                  tickFormatter={(value) => {
+                    const [year, month] = value.split("-");
+                    return new Date(parseInt(year), parseInt(month) - 1).toLocaleDateString("en-US", {
+                      month: "short",
+                    });
+                  }}
+                />
+                <YAxis tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`} />
+                <Tooltip
+                  formatter={(value: number) => formatCurrency(value)}
+                  labelFormatter={(label) => formatMonth(label)}
+                />
+                <Legend />
+                <Line
+                  type="monotone"
+                  dataKey="net"
+                  stroke="#6366f1"
+                  strokeWidth={3}
+                  dot={{ r: 4 }}
+                  name="Net Income"
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+
+          {/* Category Breakdown Pie Charts */}
+          <div className="bg-white p-6 rounded-lg shadow">
+            <h2 className="text-xl font-bold mb-4">Top Spending Categories</h2>
+            {data.expensesByCategory.length > 0 ? (
+              <ResponsiveContainer width="100%" height={300}>
+                <PieChart>
+                  <Pie
+                    data={data.expensesByCategory
+                      .filter((cat) => cat.name !== "Transfer")
+                      .slice(0, 8)}
+                    dataKey="total"
+                    nameKey="name"
+                    cx="50%"
+                    cy="50%"
+                    outerRadius={100}
+                    label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                  >
+                    {data.expensesByCategory
+                      .filter((cat) => cat.name !== "Transfer")
+                      .slice(0, 8)
+                      .map((_, index) => (
+                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                      ))}
+                  </Pie>
+                  <Tooltip formatter={(value: number) => formatCurrency(value)} />
+                </PieChart>
+              </ResponsiveContainer>
+            ) : (
+              <p className="text-gray-500 text-center py-20">No expense data available</p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Month-over-Month Comparison */}
+      {data.byMonth && data.byMonth.length >= 2 && (
+        <div className="bg-white p-6 rounded-lg shadow mb-6">
+          <h2 className="text-xl font-bold mb-4">Month-over-Month Comparison</h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {(() => {
+              const currentMonth = data.byMonth[data.byMonth.length - 1];
+              const previousMonth = data.byMonth[data.byMonth.length - 2];
+
+              const incomeChange = currentMonth.income - previousMonth.income;
+              const expensesChange = currentMonth.expenses - previousMonth.expenses;
+              const netChange = currentMonth.net - previousMonth.net;
+
+              const incomeChangePercent = previousMonth.income !== 0
+                ? ((incomeChange / Math.abs(previousMonth.income)) * 100)
+                : 0;
+              const expensesChangePercent = previousMonth.expenses !== 0
+                ? ((expensesChange / previousMonth.expenses) * 100)
+                : 0;
+              const netChangePercent = previousMonth.net !== 0
+                ? ((netChange / Math.abs(previousMonth.net)) * 100)
+                : 0;
+
+              const ChangeIndicator = ({ value, percent }: { value: number; percent: number }) => {
+                const isPositive = value > 0;
+                const isIncome = false; // Will be passed as prop
+                return (
+                  <div className="flex items-center gap-1 text-sm">
+                    <span className={isPositive ? "text-green-600" : "text-red-600"}>
+                      {isPositive ? "↑" : "↓"} {formatCurrency(Math.abs(value))}
+                    </span>
+                    <span className="text-gray-500">
+                      ({Math.abs(percent).toFixed(1)}%)
+                    </span>
+                  </div>
+                );
+              };
+
+              return (
+                <>
+                  <div className="bg-gradient-to-br from-green-50 to-green-100 p-4 rounded-lg border border-green-200">
+                    <div className="text-sm text-green-800 font-medium mb-1">Income Change</div>
+                    <div className="text-2xl font-bold text-green-900 mb-2">
+                      {formatCurrency(currentMonth.income)}
+                    </div>
+                    <div className="text-xs text-green-700 mb-1">
+                      vs {formatMonth(previousMonth.month)}: {formatCurrency(previousMonth.income)}
+                    </div>
+                    <div className={`flex items-center gap-1 text-sm ${incomeChange < 0 ? "text-red-600" : "text-green-600"}`}>
+                      <span>{incomeChange < 0 ? "↓" : "↑"} {formatCurrency(Math.abs(incomeChange))}</span>
+                      <span className="text-gray-600">({Math.abs(incomeChangePercent).toFixed(1)}%)</span>
+                    </div>
+                  </div>
+
+                  <div className="bg-gradient-to-br from-red-50 to-red-100 p-4 rounded-lg border border-red-200">
+                    <div className="text-sm text-red-800 font-medium mb-1">Expenses Change</div>
+                    <div className="text-2xl font-bold text-red-900 mb-2">
+                      {formatCurrency(currentMonth.expenses)}
+                    </div>
+                    <div className="text-xs text-red-700 mb-1">
+                      vs {formatMonth(previousMonth.month)}: {formatCurrency(previousMonth.expenses)}
+                    </div>
+                    <div className={`flex items-center gap-1 text-sm ${expensesChange > 0 ? "text-red-600" : "text-green-600"}`}>
+                      <span>{expensesChange > 0 ? "↑" : "↓"} {formatCurrency(Math.abs(expensesChange))}</span>
+                      <span className="text-gray-600">({Math.abs(expensesChangePercent).toFixed(1)}%)</span>
+                    </div>
+                  </div>
+
+                  <div className="bg-gradient-to-br from-blue-50 to-blue-100 p-4 rounded-lg border border-blue-200">
+                    <div className="text-sm text-blue-800 font-medium mb-1">Net Income Change</div>
+                    <div className="text-2xl font-bold text-blue-900 mb-2">
+                      {formatCurrency(currentMonth.net)}
+                    </div>
+                    <div className="text-xs text-blue-700 mb-1">
+                      vs {formatMonth(previousMonth.month)}: {formatCurrency(previousMonth.net)}
+                    </div>
+                    <div className={`flex items-center gap-1 text-sm ${netChange < 0 ? "text-red-600" : "text-green-600"}`}>
+                      <span>{netChange < 0 ? "↓" : "↑"} {formatCurrency(Math.abs(netChange))}</span>
+                      <span className="text-gray-600">({Math.abs(netChangePercent).toFixed(1)}%)</span>
+                    </div>
+                  </div>
+                </>
+              );
+            })()}
+          </div>
+        </div>
+      )}
 
       {/* Month-by-Month Breakdown */}
       {data.byMonth && data.byMonth.length > 0 && (

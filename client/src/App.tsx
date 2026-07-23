@@ -5,6 +5,7 @@ import Transactions from "./pages/Transactions";
 import Budgets from "./pages/Budgets";
 import IncomeSpending from "./pages/IncomeSpending";
 import Transfers from "./pages/Transfers";
+import Recurring from "./pages/Recurring";
 import OAuthReturn from "./pages/OAuthReturn";
 
 const navLinkClass = ({ isActive }: { isActive: boolean }) =>
@@ -34,6 +35,9 @@ export default function App() {
             <NavLink to="/budgets" className={navLinkClass}>
               Budgets
             </NavLink>
+            <NavLink to="/recurring" className={navLinkClass}>
+              Recurring
+            </NavLink>
             <NavLink to="/transfers" className={navLinkClass}>
               Transfers
             </NavLink>
@@ -47,6 +51,7 @@ export default function App() {
           <Route path="/accounts" element={<Accounts />} />
           <Route path="/transactions" element={<Transactions />} />
           <Route path="/budgets" element={<Budgets />} />
+          <Route path="/recurring" element={<Recurring />} />
           <Route path="/transfers" element={<Transfers />} />
           <Route path="/oauth-return" element={<OAuthReturn />} />
         </Routes>

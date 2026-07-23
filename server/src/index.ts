@@ -10,6 +10,7 @@ import categoriesRoutes from "./routes/categories";
 import budgetsRoutes from "./routes/budgets";
 import dashboardRoutes from "./routes/dashboard";
 import transfersRoutes from "./routes/transfers";
+import recurringRoutes from "./routes/recurring";
 
 const DEFAULT_CATEGORIES = [
   { name: "Groceries", isIncome: false },
@@ -62,6 +63,7 @@ async function main() {
   app.use("/api/budgets", budgetsRoutes);
   app.use("/api/dashboard", dashboardRoutes);
   app.use("/api/transfers", transfersRoutes);
+  app.use("/api/recurring", recurringRoutes);
 
   const port = Number(process.env.PORT) || 4000;
   app.listen(port, () => console.log(`Budget app server listening on http://localhost:${port}`));
