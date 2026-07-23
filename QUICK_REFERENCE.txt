@@ -1,0 +1,179 @@
+BUDGET APP - QUICK REFERENCE GUIDE
+
+================================================================================
+PAGES & COMPONENTS
+================================================================================
+
+DASHBOARD (/pages/Dashboard.tsx)
+  - Net Worth Summary (assets - liabilities)
+  - Spending by Category (Pie Chart)
+  - Budget vs. Actual (Progress Bars)
+  - Monthly selector
+  [NOTE: Income is EXCLUDED from dashboard - only shows positive amounts]
+
+TRANSACTIONS (/pages/Transactions.tsx)
+  - List all transactions with filtering
+  - Search by name
+  - Filter by account
+  - Filter by category
+  - Inline category editing
+  [Color coding: positive=dark (expense), negative=green (income)]
+
+BUDGETS (/pages/Budgets.tsx)
+  - Set monthly budgets per category
+  - View spent vs. budget
+  - Shows remaining amount
+  [Only shows expense categories - income categories filtered out]
+
+ACCOUNTS (/pages/Accounts.tsx)
+  - Link accounts via Plaid
+  - Add manual accounts
+  - View balances grouped by institution
+  - Sync functionality
+
+================================================================================
+TRANSACTION CATEGORIZATION
+================================================================================
+
+INCOME vs. EXPENSES
+  - Categories have "isIncome" boolean flag (only "Income" category marked true)
+  - Amount Convention (Plaid):
+    * Positive = Money OUT (expenses/charges)
+    * Negative = Money IN (income/deposits)
+
+DEFAULT CATEGORIES (17 total):
+  Expenses: Groceries, Dining & Restaurants, Rent & Mortgage, Utilities,
+            Transportation, Shopping, Entertainment, Health & Fitness, Travel,
+            Subscriptions, Insurance, Personal Care, Education, Gifts & Donations,
+            Fees & Charges, Transfer
+  Income:   Income (with isIncome=true)
+
+KEY FILTERING RULES:
+  - Budgets page: .filter((c) => !c.isIncome) → only expense categories
+  - Dashboard: amount: { gt: 0 } → only positive amounts (excludes income)
+
+================================================================================
+DATABASE SCHEMA HIGHLIGHTS
+================================================================================
+
+TRANSACTION
+  - id, plaidTransactionId, accountId, categoryId
+  - amount (positive=out, negative=in), date, name, merchantName
+  - pending, isManual, notes
+  - Indexes: accountId, categoryId, date
+  
+CATEGORY
+  - id, name (unique), icon, isIncome, createdAt
+  
+ACCOUNT
+  - id, plaidItemId, plaidAccountId
+  - name, institutionName, type, subtype, mask
+  - currentBalance, isManual, archivedAt
+  
+BUDGET
+  - id, categoryId, month (YYYY-MM), amount
+  - Unique constraint: (categoryId, month)
+
+DATABASE: SQLite (swappable via DATABASE_URL env var)
+
+================================================================================
+FILTERING CAPABILITIES
+================================================================================
+
+TRANSACTIONS PAGE (UI)
+  ✓ Text search by name
+  ✓ Filter by account (dropdown)
+  ✓ Filter by category (dropdown + "Uncategorized")
+  ✗ Date range (backend supports, no UI)
+
+BACKEND API (/api/transactions)
+  ✓ accountId - exact match
+  ✓ categoryId - exact match (or "uncategorized" for null)
+  ✓ search - text contains
+  ✓ startDate, endDate - date range
+  ✓ limit - pagination (default 500)
+
+DASHBOARD
+  ✓ Monthly selector
+  ✗ Income/expense toggle
+  ✗ Category filter
+
+BUDGETS
+  ✓ Monthly selector
+  ✓ Category type filter (auto-excludes income)
+
+================================================================================
+INCOME & SPENDING SUMMARY
+================================================================================
+
+INCOME TRACKING
+  ✓ Exists: Income category with isIncome=true flag
+  ✓ Exists: API support for income transactions (negative amounts)
+  ✗ MISSING: Dashboard income view
+  ✗ MISSING: Income filtering on Transactions page
+  ✗ MISSING: Multiple income categories (only "Income" exists)
+  ✗ MISSING: Income summary/reporting
+
+SPENDING TRACKING
+  ✓ Exists: Dashboard spending by category (pie chart)
+  ✓ Exists: Transactions page with filtering
+  ✓ Exists: Budgets page with budget vs. actual
+  ✓ Exists: Monthly spending breakdown
+
+TRANSFERS & ZELLE
+  ✓ Exists: "Transfer" category (same as expense)
+  ✗ MISSING: Auto-detection of transfers
+  ✗ MISSING: Deduplication (same transfer from both accounts)
+  ✗ MISSING: Transfer exclusion from spending totals
+  [NOTE: Plaid may not capture Zelle in all bank feeds]
+
+================================================================================
+KEY FILES
+================================================================================
+
+FRONTEND
+  /client/src/pages/Dashboard.tsx       - Overview dashboard
+  /client/src/pages/Transactions.tsx    - Transaction list & filter
+  /client/src/pages/Budgets.tsx         - Budget planning
+  /client/src/pages/Accounts.tsx        - Account management
+  /client/src/lib/api.ts                - API client & interfaces
+  /client/src/App.tsx                   - Navigation
+
+BACKEND
+  /server/src/routes/dashboard.ts       - Dashboard summary endpoint
+  /server/src/routes/transactions.ts    - Transaction CRUD & list
+  /server/src/routes/categories.ts      - Category CRUD
+  /server/src/routes/budgets.ts         - Budget CRUD
+  /server/src/routes/accounts.ts        - Account CRUD & sync
+  /server/src/routes/plaid.ts           - Plaid integration
+  /server/src/services/syncTransactions.ts - Transaction sync
+  /server/src/index.ts                  - Server & category seeding
+  /server/prisma/schema.prisma          - Data model
+
+================================================================================
+WHAT NEEDS TO BE BUILT
+================================================================================
+
+PRIORITY 1: Income Dashboard
+  - Add income section to dashboard
+  - Show total monthly income
+  - Add income by category breakdown
+  - Create multiple income categories (Salary, Bonus, Interest, etc.)
+
+PRIORITY 2: Transfer Handling
+  - Exclude transfers from spending calculations
+  - Add transfer filter/view
+  - Handle transfer deduplication
+
+PRIORITY 3: Enhanced Filtering
+  - Add date range picker (backend ready, just need UI)
+  - Add income/expense toggle on transactions
+  - Add pending transaction filter
+
+PRIORITY 4: Income Reporting
+  - Dedicated Income page
+  - YTD income tracking
+  - Income vs. budget (like expense budgets)
+  - Income trend analysis
+
+================================================================================

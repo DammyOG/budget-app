@@ -19,25 +19,77 @@ export default function Dashboard() {
   const [month, setMonth] = useState(currentMonth());
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(false);
+  const [lastSync, setLastSync] = useState<Date | null>(null);
 
-  useEffect(() => {
+  const loadDashboard = () => {
     api
       .getDashboardSummary(month)
       .then(setSummary)
       .catch((err) => setError(err.message));
+  };
+
+  const syncTransactions = async () => {
+    setSyncing(true);
+    try {
+      await api.syncAll();
+      const now = new Date();
+      setLastSync(now);
+      localStorage.setItem('lastSyncTime', now.getTime().toString());
+      loadDashboard();
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  useEffect(() => {
+    loadDashboard();
+    // Load last sync time from localStorage
+    const lastSyncTime = localStorage.getItem('lastSyncTime');
+    if (lastSyncTime) {
+      setLastSync(new Date(parseInt(lastSyncTime)));
+    }
+  }, []);
+
+  useEffect(() => {
+    loadDashboard();
   }, [month]);
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="text-2xl font-semibold">Dashboard</h1>
-        <input
-          type="month"
-          value={month}
-          onChange={(e) => setMonth(e.target.value)}
-          className="rounded border px-3 py-1.5 text-sm"
-        />
+        <div className="flex items-center gap-3">
+          {lastSync && (
+            <span className="text-xs text-gray-500">
+              Last synced: {lastSync.toLocaleTimeString()}
+            </span>
+          )}
+          <button
+            onClick={syncTransactions}
+            disabled={syncing}
+            className="px-3 py-1.5 text-sm rounded border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-50 flex items-center gap-2"
+          >
+            <span>{syncing ? "⏳" : "🔄"}</span>
+            {syncing ? "Syncing..." : "Sync Now"}
+          </button>
+          <input
+            type="month"
+            value={month}
+            onChange={(e) => setMonth(e.target.value)}
+            className="rounded border px-3 py-1.5 text-sm"
+          />
+        </div>
       </div>
+
+      {syncing && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-center gap-3">
+          <div className="animate-spin">⏳</div>
+          <span className="text-sm text-blue-900">Syncing transactions from your bank...</span>
+        </div>
+      )}
 
       {error && <p className="text-sm text-red-600">{error}</p>}
 
