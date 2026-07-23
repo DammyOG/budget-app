@@ -51,8 +51,9 @@ model Category {
   isIncome     Boolean  @default(false)
   createdAt    DateTime @default(now())
 
-  transactions Transaction[]
-  budgets      Budget[]
+  transactions        Transaction[]
+  budgets             Budget[]
+  categorizationRules CategorizationRule[]
 }
 
 model Transaction {
@@ -67,6 +68,7 @@ model Transaction {
   pending              Boolean @default(false)
   isManual            Boolean  @default(false)
   notes               String?
+  transferPairId      String?  // Links to another transaction if this is part of an inter-account transfer
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
@@ -76,6 +78,7 @@ model Transaction {
   @@index([accountId])
   @@index([categoryId])
   @@index([date])
+  @@index([transferPairId])
 }
 
 model Budget {
@@ -89,4 +92,18 @@ model Budget {
   category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
 
   @@unique([categoryId, month])
+}
+
+model CategorizationRule {
+  id         String   @id @default(cuid())
+  pattern    String   @unique // Transaction name pattern to match
+  categoryId String
+  confidence Int      @default(100) // 0-100, increased when user confirms, decreased when rejected
+  timesUsed  Int      @default(0)   // Track how often this rule is used
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@index([pattern])
 }

@@ -67,6 +67,35 @@ export interface DashboardSummary {
   budgetVsActual: { categoryId: string; categoryName: string; budgeted: number; spent: number }[];
 }
 
+export interface IncomeSpendingSummary {
+  startDate: string;
+  endDate: string;
+  totalIncome: number;
+  totalExpenses: number;
+  netIncome: number;
+  incomeByCategory: { categoryId: string | null; name: string; total: number }[];
+  expensesByCategory: { categoryId: string | null; name: string; total: number }[];
+  byMonth: { month: string; income: number; expenses: number; net: number }[];
+}
+
+export interface TransferPair {
+  fromTransaction: {
+    id: string;
+    name: string;
+    amount: number;
+    date: Date;
+    accountName: string;
+  };
+  toTransaction: {
+    id: string;
+    name: string;
+    amount: number;
+    date: Date;
+    accountName: string;
+  };
+  confidence: "high" | "medium" | "low";
+}
+
 export const api = {
   createLinkToken: () => request<{ linkToken: string }>("/plaid/create_link_token", { method: "POST" }),
   exchangePublicToken: (publicToken: string) =>
@@ -93,6 +122,12 @@ export const api = {
   updateTransaction: (id: string, data: Partial<Transaction>) =>
     request<Transaction>(`/transactions/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   deleteTransaction: (id: string) => request(`/transactions/${id}`, { method: "DELETE" }),
+  autoCategorizeAll: () => request<{ total: number; categorized: number; recategorized: number; processed: number }>("/transactions/auto-categorize", { method: "POST" }),
+  categorizeAllSimilar: (transactionName: string, categoryId: string) =>
+    request<{ count: number }>("/transactions/categorize-similar", {
+      method: "POST",
+      body: JSON.stringify({ transactionName, categoryId }),
+    }),
 
   getCategories: () => request<Category[]>("/categories"),
   addCategory: (data: Partial<Category>) =>
@@ -105,6 +140,23 @@ export const api = {
   deleteBudget: (id: string) => request(`/budgets/${id}`, { method: "DELETE" }),
 
   getDashboardSummary: (month: string) => request<DashboardSummary>(`/dashboard/summary?month=${month}`),
+  getIncomeSpending: (params?: { startDate?: string; endDate?: string; groupBy?: string }) => {
+    const qs = new URLSearchParams(params as Record<string, string>).toString();
+    return request<IncomeSpendingSummary>(`/dashboard/income-spending${qs ? `?${qs}` : ""}`);
+  },
+
+  detectTransfers: () => request<TransferPair[]>("/transfers/detect"),
+  linkTransferPair: (transaction1Id: string, transaction2Id: string) =>
+    request<{ success: boolean }>("/transfers/link", {
+      method: "POST",
+      body: JSON.stringify({ transaction1Id, transaction2Id }),
+    }),
+  unlinkTransferPair: (transactionId: string) =>
+    request<{ success: boolean }>("/transfers/unlink", {
+      method: "POST",
+      body: JSON.stringify({ transactionId }),
+    }),
+  autoLinkTransfers: () => request<{ total: number; linked: number; zelleFixed?: number }>("/transfers/auto-link", { method: "POST" }),
 };
 
 export function formatCurrency(value: number | null | undefined): string {

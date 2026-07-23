@@ -3,6 +3,8 @@ import Dashboard from "./pages/Dashboard";
 import Accounts from "./pages/Accounts";
 import Transactions from "./pages/Transactions";
 import Budgets from "./pages/Budgets";
+import IncomeSpending from "./pages/IncomeSpending";
+import Transfers from "./pages/Transfers";
 import OAuthReturn from "./pages/OAuthReturn";
 
 const navLinkClass = ({ isActive }: { isActive: boolean }) =>
@@ -20,6 +22,9 @@ export default function App() {
             <NavLink to="/" end className={navLinkClass}>
               Dashboard
             </NavLink>
+            <NavLink to="/income-spending" className={navLinkClass}>
+              Income & Spending
+            </NavLink>
             <NavLink to="/accounts" className={navLinkClass}>
               Accounts
             </NavLink>
@@ -29,15 +34,20 @@ export default function App() {
             <NavLink to="/budgets" className={navLinkClass}>
               Budgets
             </NavLink>
+            <NavLink to="/transfers" className={navLinkClass}>
+              Transfers
+            </NavLink>
           </nav>
         </div>
       </header>
       <main className="mx-auto max-w-6xl px-4 py-6">
         <Routes>
           <Route path="/" element={<Dashboard />} />
+          <Route path="/income-spending" element={<IncomeSpending />} />
           <Route path="/accounts" element={<Accounts />} />
           <Route path="/transactions" element={<Transactions />} />
           <Route path="/budgets" element={<Budgets />} />
+          <Route path="/transfers" element={<Transfers />} />
           <Route path="/oauth-return" element={<OAuthReturn />} />
         </Routes>
       </main>

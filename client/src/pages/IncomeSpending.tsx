@@ -1,0 +1,603 @@
+import { useEffect, useState } from "react";
+import { api, formatCurrency, type IncomeSpendingSummary, type Transaction, type Category } from "../lib/api";
+
+type DateRange = "month" | "year" | "all-time" | "custom";
+
+export default function IncomeSpending() {
+  const [data, setData] = useState<IncomeSpendingSummary | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [dateRange, setDateRange] = useState<DateRange>("month");
+  const [selectedMonth, setSelectedMonth] = useState(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  });
+  const [selectedYear, setSelectedYear] = useState(() => new Date().getFullYear().toString());
+  const [customStart, setCustomStart] = useState("");
+  const [customEnd, setCustomEnd] = useState("");
+
+  // New state for category expansion and transactions
+  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
+  const [categoryTransactions, setCategoryTransactions] = useState<Record<string, Transaction[]>>({});
+  const [allCategories, setAllCategories] = useState<Category[]>([]);
+  const [processing, setProcessing] = useState(false);
+
+  useEffect(() => {
+    loadData();
+  }, [dateRange, selectedMonth, selectedYear, customStart, customEnd]);
+
+  useEffect(() => {
+    api.getCategories().then(setAllCategories).catch(console.error);
+  }, []);
+
+  function loadData() {
+    setLoading(true);
+    setError(null);
+
+    const params = getDateRangeParams();
+
+    api
+      .getIncomeSpending(params)
+      .then(setData)
+      .catch((err) => setError(err.message))
+      .finally(() => setLoading(false));
+  }
+
+  function getDateRangeParams(): { startDate?: string; endDate?: string; groupBy?: string } {
+    switch (dateRange) {
+      case "month": {
+        const [year, month] = selectedMonth.split("-").map(Number);
+        const start = new Date(Date.UTC(year, month - 1, 1));
+        const end = new Date(Date.UTC(year, month, 1));
+        return {
+          startDate: start.toISOString(),
+          endDate: end.toISOString(),
+          groupBy: "month",
+        };
+      }
+      case "year": {
+        const year = parseInt(selectedYear);
+        const start = new Date(Date.UTC(year, 0, 1));
+        const end = new Date(Date.UTC(year + 1, 0, 1));
+        return {
+          startDate: start.toISOString(),
+          endDate: end.toISOString(),
+          groupBy: "month",
+        };
+      }
+      case "all-time": {
+        return { groupBy: "month" };
+      }
+      case "custom": {
+        if (customStart && customEnd) {
+          return {
+            startDate: new Date(customStart).toISOString(),
+            endDate: new Date(customEnd).toISOString(),
+            groupBy: "month",
+          };
+        }
+        return {};
+      }
+      default:
+        return {};
+    }
+  }
+
+  // Generate list of months for dropdown
+  function getMonthOptions() {
+    const months = [];
+    const currentDate = new Date();
+    // Generate last 24 months
+    for (let i = 0; i < 24; i++) {
+      const date = new Date(currentDate.getFullYear(), currentDate.getMonth() - i, 1);
+      const value = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+      const label = date.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+      months.push({ value, label });
+    }
+    return months;
+  }
+
+  // Generate list of years for dropdown
+  function getYearOptions() {
+    const years = [];
+    const currentYear = new Date().getFullYear();
+    // Generate current year and previous 5 years
+    for (let i = 0; i <= 5; i++) {
+      const year = currentYear - i;
+      years.push(year.toString());
+    }
+    return years;
+  }
+
+  function formatMonth(monthStr: string): string {
+    const [year, month] = monthStr.split("-");
+    return new Date(parseInt(year), parseInt(month) - 1).toLocaleDateString("en-US", {
+      month: "short",
+      year: "numeric",
+    });
+  }
+
+  async function toggleCategory(categoryId: string | null, isIncome: boolean) {
+    const key = `${isIncome ? "income" : "expense"}-${categoryId || "uncategorized"}`;
+    const newExpanded = new Set(expandedCategories);
+
+    if (expandedCategories.has(key)) {
+      newExpanded.delete(key);
+      setExpandedCategories(newExpanded);
+    } else {
+      newExpanded.add(key);
+      setExpandedCategories(newExpanded);
+
+      // Load transactions for this category if not already loaded
+      if (!categoryTransactions[key]) {
+        const params = getDateRangeParams();
+        const transactionsParams: Record<string, string> = {
+          categoryId: categoryId || "uncategorized",
+        };
+        if (params.startDate) transactionsParams.startDate = params.startDate;
+        if (params.endDate) transactionsParams.endDate = params.endDate;
+
+        try {
+          const transactions = await api.getTransactions(transactionsParams);
+          // Filter by income/expense
+          const filtered = transactions.filter((t) => (isIncome ? t.amount < 0 : t.amount > 0));
+          setCategoryTransactions((prev) => ({ ...prev, [key]: filtered }));
+        } catch (err) {
+          console.error("Failed to load transactions:", err);
+        }
+      }
+    }
+  }
+
+  async function updateTransactionCategory(transactionId: string, newCategoryId: string | null, categoryKey: string) {
+    try {
+      await api.updateTransaction(transactionId, { categoryId: newCategoryId });
+      // Reload transactions for this category
+      setCategoryTransactions((prev) => {
+        const updated = { ...prev };
+        updated[categoryKey] = updated[categoryKey].filter((t) => t.id !== transactionId);
+        return updated;
+      });
+      // Reload summary data
+      loadData();
+    } catch (err) {
+      console.error("Failed to update category:", err);
+    }
+  }
+
+  async function cleanupTransfers() {
+    setProcessing(true);
+    try {
+      // Step 1: Auto-categorize transfers
+      const categorizeResult = await api.autoCategorizeAll();
+
+      // Step 2: Auto-link high-confidence transfer pairs (includes Zelle fix)
+      const linkResult = await api.autoLinkTransfers();
+
+      // Show results
+      const zelleMessage = linkResult.zelleFixed ? `\n• Fixed ${linkResult.zelleFixed} Zelle internal transfers` : "";
+      alert(
+        `✅ Cleanup Complete!\n\n` +
+        `Categorization:\n` +
+        `• Newly categorized: ${categorizeResult.categorized}\n` +
+        `• Re-categorized (fixed): ${categorizeResult.recategorized}\n` +
+        `• Total processed: ${categorizeResult.total}\n\n` +
+        `Transfers:\n` +
+        `• Linked ${linkResult.linked} transfer pairs${zelleMessage}\n\n` +
+        `Your income/spending totals have been updated!\n\n` +
+        `Note: Generic "payment thank you" messages are left uncategorized for manual review.`
+      );
+
+      // Reload data
+      loadData();
+      // Clear expanded categories cache
+      setCategoryTransactions({});
+    } catch (err: any) {
+      alert(`Failed to cleanup transfers: ${err.message}`);
+    } finally {
+      setProcessing(false);
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="p-8">
+        <h1 className="text-3xl font-bold mb-6">Income & Spending</h1>
+        <p>Loading...</p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-8">
+        <h1 className="text-3xl font-bold mb-6">Income & Spending</h1>
+        <p className="text-red-600">Error: {error}</p>
+      </div>
+    );
+  }
+
+  if (!data) return null;
+
+  return (
+    <div className="p-8">
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-3xl font-bold">Income & Spending</h1>
+        <button
+          onClick={cleanupTransfers}
+          disabled={processing}
+          className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center gap-2"
+        >
+          {processing ? "Processing..." : "🔄 Clean Up Transfers"}
+        </button>
+      </div>
+
+      {/* Info box about transfers */}
+      <div className="mb-6 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+        <h2 className="font-semibold text-yellow-900 mb-2">📊 Getting Accurate Totals</h2>
+        <p className="text-sm text-yellow-800 mb-2">
+          If you see inter-account transfers (like BofA → Ally) or credit card payments showing as both income and
+          expenses, click the "Clean Up Transfers" button above. This will:
+        </p>
+        <ul className="text-sm text-yellow-800 list-disc list-inside space-y-1">
+          <li>Auto-categorize transfer transactions (deposits to Robinhood, credit card payments, etc.)</li>
+          <li>Link matching transactions between your accounts</li>
+          <li>Exclude these from your income/spending totals</li>
+        </ul>
+      </div>
+
+      {/* Date Range Filters */}
+      <div className="mb-6 bg-white p-4 rounded-lg shadow">
+        <div className="flex flex-wrap gap-2 items-center">
+          <label className="font-medium">Time Period:</label>
+          <button
+            onClick={() => setDateRange("month")}
+            className={`px-4 py-2 rounded ${
+              dateRange === "month"
+                ? "bg-indigo-600 text-white"
+                : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+            }`}
+          >
+            Month
+          </button>
+          <button
+            onClick={() => setDateRange("year")}
+            className={`px-4 py-2 rounded ${
+              dateRange === "year"
+                ? "bg-indigo-600 text-white"
+                : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+            }`}
+          >
+            Year
+          </button>
+          <button
+            onClick={() => setDateRange("all-time")}
+            className={`px-4 py-2 rounded ${
+              dateRange === "all-time"
+                ? "bg-indigo-600 text-white"
+                : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+            }`}
+          >
+            All Time
+          </button>
+          <button
+            onClick={() => setDateRange("custom")}
+            className={`px-4 py-2 rounded ${
+              dateRange === "custom"
+                ? "bg-indigo-600 text-white"
+                : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+            }`}
+          >
+            Custom Range
+          </button>
+        </div>
+
+        {/* Month Selector */}
+        {dateRange === "month" && (
+          <div className="mt-4">
+            <label className="block text-sm font-medium mb-1">Select Month</label>
+            <select
+              value={selectedMonth}
+              onChange={(e) => setSelectedMonth(e.target.value)}
+              className="border rounded px-3 py-2 w-64"
+            >
+              {getMonthOptions().map((month) => (
+                <option key={month.value} value={month.value}>
+                  {month.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {/* Year Selector */}
+        {dateRange === "year" && (
+          <div className="mt-4">
+            <label className="block text-sm font-medium mb-1">Select Year</label>
+            <select
+              value={selectedYear}
+              onChange={(e) => setSelectedYear(e.target.value)}
+              className="border rounded px-3 py-2 w-64"
+            >
+              {getYearOptions().map((year) => (
+                <option key={year} value={year}>
+                  {year}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {/* Custom Date Range Picker */}
+        {dateRange === "custom" && (
+          <div className="mt-4 flex gap-4 items-center">
+            <div>
+              <label className="block text-sm font-medium mb-1">Start Date</label>
+              <input
+                type="date"
+                value={customStart}
+                onChange={(e) => setCustomStart(e.target.value)}
+                className="border rounded px-3 py-2"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">End Date</label>
+              <input
+                type="date"
+                value={customEnd}
+                onChange={(e) => setCustomEnd(e.target.value)}
+                className="border rounded px-3 py-2"
+              />
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+        <div className="bg-green-50 p-6 rounded-lg shadow">
+          <h2 className="text-sm font-medium text-green-800 mb-2">Total Income</h2>
+          <p className="text-3xl font-bold text-green-900">{formatCurrency(data.totalIncome)}</p>
+        </div>
+        <div className="bg-red-50 p-6 rounded-lg shadow">
+          <h2 className="text-sm font-medium text-red-800 mb-2">Total Expenses</h2>
+          <p className="text-3xl font-bold text-red-900">{formatCurrency(data.totalExpenses)}</p>
+        </div>
+        <div className={`p-6 rounded-lg shadow ${data.netIncome >= 0 ? "bg-blue-50" : "bg-orange-50"}`}>
+          <h2
+            className={`text-sm font-medium mb-2 ${data.netIncome >= 0 ? "text-blue-800" : "text-orange-800"}`}
+          >
+            Net Income
+          </h2>
+          <p
+            className={`text-3xl font-bold ${data.netIncome >= 0 ? "text-blue-900" : "text-orange-900"}`}
+          >
+            {formatCurrency(data.netIncome)}
+          </p>
+        </div>
+      </div>
+
+      {/* Month-by-Month Breakdown */}
+      {data.byMonth && data.byMonth.length > 0 && (
+        <div className="bg-white p-6 rounded-lg shadow mb-6">
+          <h2 className="text-xl font-bold mb-4">Month-by-Month Breakdown</h2>
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Month
+                  </th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Income
+                  </th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Expenses
+                  </th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Net
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {data.byMonth.map((month) => (
+                  <tr key={month.month}>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                      {formatMonth(month.month)}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-green-600">
+                      {formatCurrency(month.income)}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-red-600">
+                      {formatCurrency(month.expenses)}
+                    </td>
+                    <td
+                      className={`px-6 py-4 whitespace-nowrap text-sm text-right font-medium ${
+                        month.net >= 0 ? "text-blue-600" : "text-orange-600"
+                      }`}
+                    >
+                      {formatCurrency(month.net)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Income and Expenses by Category */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Income by Category */}
+        <div className="bg-white p-6 rounded-lg shadow">
+          <h2 className="text-xl font-bold mb-4">Income by Category</h2>
+          <p className="text-sm text-gray-500 mb-4">
+            Click on a category to see individual transactions. "Uncategorized" means transactions that haven't been assigned a category yet.
+          </p>
+          {data.incomeByCategory.length === 0 ? (
+            <p className="text-gray-500">No income recorded for this period</p>
+          ) : (
+            <div className="space-y-2">
+              {data.incomeByCategory.filter((cat) => cat.name !== "Transfer").map((cat) => {
+                const key = `income-${cat.categoryId || "uncategorized"}`;
+                const isExpanded = expandedCategories.has(key);
+                const transactions = categoryTransactions[key] || [];
+
+                return (
+                  <div key={cat.categoryId || "uncategorized"} className="border rounded-lg">
+                    <button
+                      onClick={() => toggleCategory(cat.categoryId, true)}
+                      className="w-full flex justify-between items-center p-3 hover:bg-gray-50 transition-colors"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="text-gray-400">{isExpanded ? "▼" : "▶"}</span>
+                        <div>
+                          <span className="text-gray-700 font-medium">{cat.name}</span>
+                          {isExpanded && transactions.length > 0 && (
+                            <span className="ml-2 text-xs text-gray-500">({transactions.length} transactions)</span>
+                          )}
+                        </div>
+                      </div>
+                      <span className="font-medium text-green-600">{formatCurrency(cat.total)}</span>
+                    </button>
+
+                    {isExpanded && (
+                      <div className="border-t bg-gray-50">
+                        {transactions.length === 0 ? (
+                          <p className="p-4 text-sm text-gray-500">Loading transactions...</p>
+                        ) : (
+                          <>
+                            <div className="divide-y">
+                              {transactions.map((tx) => (
+                                <div key={tx.id} className="p-3 flex items-center justify-between gap-4">
+                                  <div className="flex-1 min-w-0">
+                                    <div className="text-sm font-medium text-gray-900 truncate">{tx.name}</div>
+                                    <div className="text-xs text-gray-500">
+                                      {new Date(tx.date).toLocaleDateString()} · {tx.account.name}
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center gap-3">
+                                    <select
+                                      value={tx.categoryId ?? ""}
+                                      onChange={(e) => updateTransactionCategory(tx.id, e.target.value || null, key)}
+                                      className="text-xs border rounded px-2 py-1"
+                                      onClick={(e) => e.stopPropagation()}
+                                    >
+                                      <option value="">Uncategorized</option>
+                                      {allCategories.map((c) => (
+                                        <option key={c.id} value={c.id}>
+                                          {c.name}
+                                        </option>
+                                      ))}
+                                    </select>
+                                    <span className="text-sm font-medium text-green-600 whitespace-nowrap">
+                                      {formatCurrency(Math.abs(tx.amount))}
+                                    </span>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                            <div className="p-3 border-t bg-gray-100 text-xs text-gray-600 flex justify-between">
+                              <span>Showing {transactions.length} transaction{transactions.length !== 1 ? "s" : ""}</span>
+                              <span>
+                                Sum: {formatCurrency(transactions.reduce((sum, tx) => sum + Math.abs(tx.amount), 0))}
+                              </span>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Expenses by Category */}
+        <div className="bg-white p-6 rounded-lg shadow">
+          <h2 className="text-xl font-bold mb-4">Expenses by Category</h2>
+          <p className="text-sm text-gray-500 mb-4">
+            Click on a category to see individual transactions. "Uncategorized" means transactions that haven't been assigned a category yet.
+          </p>
+          {data.expensesByCategory.length === 0 ? (
+            <p className="text-gray-500">No expenses recorded for this period</p>
+          ) : (
+            <div className="space-y-2">
+              {data.expensesByCategory.filter((cat) => cat.name !== "Transfer").map((cat) => {
+                const key = `expense-${cat.categoryId || "uncategorized"}`;
+                const isExpanded = expandedCategories.has(key);
+                const transactions = categoryTransactions[key] || [];
+
+                return (
+                  <div key={cat.categoryId || "uncategorized"} className="border rounded-lg">
+                    <button
+                      onClick={() => toggleCategory(cat.categoryId, false)}
+                      className="w-full flex justify-between items-center p-3 hover:bg-gray-50 transition-colors"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="text-gray-400">{isExpanded ? "▼" : "▶"}</span>
+                        <div>
+                          <span className="text-gray-700 font-medium">{cat.name}</span>
+                          {isExpanded && transactions.length > 0 && (
+                            <span className="ml-2 text-xs text-gray-500">({transactions.length} transactions)</span>
+                          )}
+                        </div>
+                      </div>
+                      <span className="font-medium text-red-600">{formatCurrency(cat.total)}</span>
+                    </button>
+
+                    {isExpanded && (
+                      <div className="border-t bg-gray-50">
+                        {transactions.length === 0 ? (
+                          <p className="p-4 text-sm text-gray-500">Loading transactions...</p>
+                        ) : (
+                          <>
+                            <div className="divide-y">
+                              {transactions.map((tx) => (
+                                <div key={tx.id} className="p-3 flex items-center justify-between gap-4">
+                                  <div className="flex-1 min-w-0">
+                                    <div className="text-sm font-medium text-gray-900 truncate">{tx.name}</div>
+                                    <div className="text-xs text-gray-500">
+                                      {new Date(tx.date).toLocaleDateString()} · {tx.account.name}
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center gap-3">
+                                    <select
+                                      value={tx.categoryId ?? ""}
+                                      onChange={(e) => updateTransactionCategory(tx.id, e.target.value || null, key)}
+                                      className="text-xs border rounded px-2 py-1"
+                                      onClick={(e) => e.stopPropagation()}
+                                    >
+                                      <option value="">Uncategorized</option>
+                                      {allCategories.map((c) => (
+                                        <option key={c.id} value={c.id}>
+                                          {c.name}
+                                        </option>
+                                      ))}
+                                    </select>
+                                    <span className="text-sm font-medium text-red-600 whitespace-nowrap">
+                                      {formatCurrency(tx.amount)}
+                                    </span>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                            <div className="p-3 border-t bg-gray-100 text-xs text-gray-600 flex justify-between">
+                              <span>Showing {transactions.length} transaction{transactions.length !== 1 ? "s" : ""}</span>
+                              <span>Sum: {formatCurrency(transactions.reduce((sum, tx) => sum + tx.amount, 0))}</span>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
