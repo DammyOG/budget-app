@@ -58,10 +58,10 @@ export default function Dashboard() {
   }, [month]);
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-3">
+    <div className="space-y-4 md:space-y-6">
+      <div className="space-y-3">
         <h1 className="text-2xl font-semibold">Dashboard</h1>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
           {lastSync && (
             <span className="text-xs text-gray-500">
               Last synced: {lastSync.toLocaleTimeString()}
@@ -70,7 +70,7 @@ export default function Dashboard() {
           <button
             onClick={syncTransactions}
             disabled={syncing}
-            className="px-3 py-1.5 text-sm rounded border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-50 flex items-center gap-2"
+            className="px-4 py-2 text-sm rounded border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-50 flex items-center justify-center gap-2"
           >
             <span>{syncing ? "⏳" : "🔄"}</span>
             {syncing ? "Syncing..." : "Sync Now"}
@@ -79,7 +79,7 @@ export default function Dashboard() {
             type="month"
             value={month}
             onChange={(e) => setMonth(e.target.value)}
-            className="rounded border px-3 py-1.5 text-sm"
+            className="rounded border px-3 py-2 text-sm"
           />
         </div>
       </div>

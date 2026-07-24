@@ -104,14 +104,14 @@ export default function Budgets() {
   const warningCount = budgetStatuses.filter((b) => b.alertLevel === "danger" || b.alertLevel === "warning").length;
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="space-y-4 md:space-y-6">
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold">Budget Tracker</h1>
         <input
           type="month"
           value={month}
           onChange={(e) => setMonth(e.target.value)}
-          className="rounded border px-3 py-1.5 text-sm"
+          className="rounded border px-3 py-2 text-sm"
         />
       </div>
 
@@ -197,8 +197,8 @@ export default function Budgets() {
 
               return (
                 <div key={c.id} className="p-4 hover:bg-gray-50 transition-colors">
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-3 flex-1">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
+                    <div className="flex items-center gap-2 flex-wrap flex-1">
                       <span className="font-medium text-gray-900">{c.name}</span>
                       {alertBadge && (
                         <span className={`px-2 py-0.5 rounded-full text-xs font-medium border ${alertBadge.color}`}>
@@ -206,26 +206,26 @@ export default function Budgets() {
                         </span>
                       )}
                     </div>
-                    <div className="flex items-center gap-4">
-                      <div className="text-right">
-                        <div className="text-sm text-gray-500">Budget</div>
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 sm:gap-4">
+                      <div className="flex items-center gap-2 sm:text-right">
+                        <div className="text-sm text-gray-500 sm:mb-1">Budget:</div>
                         <input
                           type="number"
                           step="1"
                           value={drafts[c.id] ?? ""}
                           onChange={(e) => setDrafts({ ...drafts, [c.id]: e.target.value })}
                           onBlur={() => save(c.id)}
-                          className="w-28 rounded border px-2 py-1 text-sm text-right"
+                          className="w-full sm:w-28 rounded border px-2 py-1.5 text-sm sm:text-right"
                           placeholder="Set budget"
                         />
                       </div>
                       {hasBudget && (
                         <>
-                          <div className="text-right">
+                          <div className="flex items-center justify-between sm:block sm:text-right">
                             <div className="text-sm text-gray-500">Spent</div>
                             <div className="text-sm font-semibold">{formatCurrency(spent)}</div>
                           </div>
-                          <div className="text-right">
+                          <div className="flex items-center justify-between sm:block sm:text-right">
                             <div className="text-sm text-gray-500">Remaining</div>
                             <div className={`text-sm font-semibold ${remaining < 0 ? "text-red-600" : "text-green-600"}`}>
                               {formatCurrency(remaining)}
@@ -240,7 +240,7 @@ export default function Budgets() {
                             await api.deleteBudget(b.id);
                             load();
                           }}
-                          className="text-xs text-gray-400 hover:text-red-600 px-2"
+                          className="text-xs text-gray-400 hover:text-red-600 px-2 self-start sm:self-auto"
                         >
                           Clear
                         </button>

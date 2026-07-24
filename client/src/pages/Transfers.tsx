@@ -67,15 +67,15 @@ export default function Transfers() {
   }
 
   return (
-    <div className="p-8">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold">Transfer Detection</h1>
+    <div className="p-4 md:p-8">
+      <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3 mb-6">
+        <h1 className="text-2xl md:text-3xl font-bold">Transfer Detection</h1>
         <button
           onClick={autoLink}
           disabled={linking || potentialTransfers.length === 0}
           className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
         >
-          Auto-Link High Confidence Transfers
+          Auto-Link High Confidence
         </button>
       </div>
 
@@ -106,8 +106,8 @@ export default function Transfers() {
           </p>
 
           {potentialTransfers.map((pair, index) => (
-            <div key={`${pair.fromTransaction.id}-${pair.toTransaction.id}`} className="bg-white p-6 rounded-lg shadow">
-              <div className="flex justify-between items-start mb-4">
+            <div key={`${pair.fromTransaction.id}-${pair.toTransaction.id}`} className="bg-white p-4 md:p-6 rounded-lg shadow">
+              <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-start gap-3 mb-4">
                 <div>
                   <span className={`inline-block px-2 py-1 rounded text-xs font-medium ${getConfidenceBadgeColor(pair.confidence)}`}>
                     {pair.confidence} confidence
