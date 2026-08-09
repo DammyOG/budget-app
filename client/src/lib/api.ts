@@ -34,6 +34,8 @@ export interface Category {
   isIncome: boolean;
 }
 
+export type TransactionKind = "expense" | "income" | "transfer";
+
 export interface Transaction {
   id: string;
   accountId: string;
@@ -45,6 +47,9 @@ export interface Transaction {
   pending: boolean;
   isManual: boolean;
   notes: string | null;
+  kind: TransactionKind;
+  kindLocked: boolean;
+  transferPairId: string | null;
   account: { name: string; institutionName: string };
   category: Category | null;
 }
@@ -63,6 +68,9 @@ export interface DashboardSummary {
   assets: number;
   liabilities: number;
   byType: Record<string, number>;
+  income: number;
+  spending: number;
+  netCashFlow: number;
   spendingByCategory: { categoryId: string | null; name: string; total: number }[];
   budgetVsActual: { categoryId: string; categoryName: string; budgeted: number; spent: number }[];
 }
@@ -190,6 +198,20 @@ export const api = {
 export function formatCurrency(value: number | null | undefined): string {
   if (value == null) return "—";
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value);
+}
+
+// Plaid signs money-out positive, which reads backwards from every finance app.
+// Flip it for display so a $50 coffee shows as -$50.00 and a paycheck as
+// +$2,000.00.
+export function formatSignedAmount(amount: number): string {
+  return formatCurrency(-amount);
+}
+
+// Dates are stored at UTC midnight. Rendering them in local time shows every
+// transaction a day early for anyone west of UTC. Accepts Date as well as the
+// string that actually arrives over JSON, since some API types declare Date.
+export function formatTransactionDate(date: string | Date): string {
+  return new Date(date).toLocaleDateString("en-US", { timeZone: "UTC" });
 }
 
 export function currentMonth(): string {

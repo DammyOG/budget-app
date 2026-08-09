@@ -26,24 +26,31 @@ router.get("/summary", async (req, res) => {
     byType[acct.type] = (byType[acct.type] || 0) + balance;
   }
 
+  // "kind" carries the transfer/income/expense distinction, so this no longer
+  // has to re-derive it from category + transferPairId at every call site.
+  // Note there's no amount filter: refunds are negative expenses and must be
+  // included so they net against the category they came back from.
   const transactions = await prisma.transaction.findMany({
-    where: { date: { gte: startDate, lt: endDate }, amount: { gt: 0 } },
+    where: { date: { gte: startDate, lt: endDate }, kind: "expense" },
     include: { category: true },
   });
 
-  // Get Transfer category to exclude from calculations
-  const transferCategory = await prisma.category.findFirst({ where: { name: "Transfer" } });
-
   const spendingByCategory: Record<string, { categoryId: string | null; name: string; total: number }> = {};
+  let spending = 0;
   for (const tx of transactions) {
-    // Skip transfers (either by category or if it's a linked transfer pair)
-    if (tx.categoryId === transferCategory?.id || tx.transferPairId) continue;
-
     const key = tx.categoryId || "uncategorized";
     const name = tx.category?.name || "Uncategorized";
     if (!spendingByCategory[key]) spendingByCategory[key] = { categoryId: tx.categoryId, name, total: 0 };
     spendingByCategory[key].total += tx.amount;
+    spending += tx.amount;
   }
+
+  const incomeTransactions = await prisma.transaction.findMany({
+    where: { date: { gte: startDate, lt: endDate }, kind: "income" },
+    select: { amount: true },
+  });
+  // Plaid signs money-in negative; income reads more naturally positive.
+  const income = incomeTransactions.reduce((sum, tx) => sum - tx.amount, 0);
 
   const budgets = await prisma.budget.findMany({ where: { month }, include: { category: true } });
   const budgetVsActual = budgets.map((b) => ({
@@ -59,7 +66,14 @@ router.get("/summary", async (req, res) => {
     assets,
     liabilities,
     byType,
-    spendingByCategory: Object.values(spendingByCategory).sort((a, b) => b.total - a.total),
+    income,
+    spending,
+    netCashFlow: income - spending,
+    spendingByCategory: Object.values(spendingByCategory)
+      // A category fully cancelled out by refunds isn't spending, and would
+      // render as an invisible or negative pie slice.
+      .filter((c) => c.total > 0)
+      .sort((a, b) => b.total - a.total),
     budgetVsActual,
   });
 });
@@ -88,20 +102,14 @@ router.get("/income-spending", async (req, res) => {
       orderBy: { date: "asc" },
     });
 
-    // Get Transfer category to exclude from calculations
-    const transferCategory = await prisma.category.findFirst({ where: { name: "Transfer" } });
+    // Split on "kind", not on sign. Splitting on sign made every refund look
+    // like income; a negative expense is a refund and belongs with expenses so
+    // it nets against the category it came back from. Transfers are excluded
+    // by virtue of being neither kind.
+    const income = transactions.filter((t) => t.kind === "income");
+    const expenses = transactions.filter((t) => t.kind === "expense");
 
-    // Separate income and expenses (Plaid convention: negative = income, positive = expense)
-    // Exclude transfers from both income and expenses:
-    // - Either has Transfer category OR has a transferPairId (linked as inter-account transfer)
-    const income = transactions.filter(
-      (t) => t.amount < 0 && t.categoryId !== transferCategory?.id && !t.transferPairId
-    );
-    const expenses = transactions.filter(
-      (t) => t.amount > 0 && t.categoryId !== transferCategory?.id && !t.transferPairId
-    );
-
-    const totalIncome = income.reduce((sum, t) => sum + Math.abs(t.amount), 0);
+    const totalIncome = income.reduce((sum, t) => sum - t.amount, 0);
     const totalExpenses = expenses.reduce((sum, t) => sum + t.amount, 0);
 
     // Income by category
@@ -110,7 +118,7 @@ router.get("/income-spending", async (req, res) => {
       const key = tx.categoryId || "uncategorized";
       const name = tx.category?.name || "Uncategorized";
       if (!incomeByCategory[key]) incomeByCategory[key] = { categoryId: tx.categoryId, name, total: 0 };
-      incomeByCategory[key].total += Math.abs(tx.amount);
+      incomeByCategory[key].total -= tx.amount;
     }
 
     // Expenses by category
@@ -125,17 +133,15 @@ router.get("/income-spending", async (req, res) => {
     // Month-by-month breakdown (if groupBy is month)
     const byMonth: Record<string, { month: string; income: number; expenses: number; net: number }> = {};
     if (groupBy === "month") {
-      // Exclude transfers from monthly breakdown
-      const nonTransferTransactions = transactions.filter(
-        (tx) => tx.categoryId !== transferCategory?.id && !tx.transferPairId
-      );
-      for (const tx of nonTransferTransactions) {
+      for (const tx of [...income, ...expenses]) {
         const monthKey = tx.date.toISOString().slice(0, 7);
         if (!byMonth[monthKey]) {
           byMonth[monthKey] = { month: monthKey, income: 0, expenses: 0, net: 0 };
         }
-        if (tx.amount < 0) {
-          byMonth[monthKey].income += Math.abs(tx.amount);
+        // Bucketed by kind rather than sign, so refunds reduce that month's
+        // spending instead of showing up as income.
+        if (tx.kind === "income") {
+          byMonth[monthKey].income -= tx.amount;
         } else {
           byMonth[monthKey].expenses += tx.amount;
         }

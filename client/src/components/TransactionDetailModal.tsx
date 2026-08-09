@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { api, formatCurrency, Transaction, Category } from "../lib/api";
+import { api, formatCurrency, formatSignedAmount, Transaction, Category } from "../lib/api";
 
 interface Props {
   transaction: Transaction;
@@ -54,11 +54,27 @@ export default function TransactionDetailModal({ transaction, categories, onClos
           {/* Amount */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Amount</label>
-            <div className={`text-3xl font-bold ${transaction.amount > 0 ? "text-red-600" : "text-green-600"}`}>
-              {formatCurrency(transaction.amount)}
+            <div
+              className={`text-3xl font-bold ${
+                transaction.kind === "transfer"
+                  ? "text-gray-500"
+                  : transaction.amount > 0
+                  ? "text-red-600"
+                  : "text-green-600"
+              }`}
+            >
+              {formatSignedAmount(transaction.amount)}
             </div>
             <p className="text-xs text-gray-500 mt-1">
-              {transaction.amount > 0 ? "Expense" : "Income"}
+              {/* Labelled by kind, not by sign — a transfer moves money in one
+                  direction but is neither an expense nor income. */}
+              {transaction.kind === "transfer"
+                ? "Transfer — excluded from income and spending"
+                : transaction.kind === "income"
+                ? "Income"
+                : transaction.amount < 0
+                ? "Refund"
+                : "Expense"}
             </p>
           </div>
 
@@ -72,6 +88,8 @@ export default function TransactionDetailModal({ transaction, categories, onClos
                   year: "numeric",
                   month: "long",
                   day: "numeric",
+                  // Stored at UTC midnight; without this it renders a day early.
+                  timeZone: "UTC",
                 })}
               </p>
             </div>

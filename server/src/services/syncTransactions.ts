@@ -8,6 +8,16 @@ export async function syncTransactionsForItem(plaidItemDbId: string) {
   const item = await prisma.plaidItem.findUniqueOrThrow({ where: { id: plaidItemDbId } });
   const accessToken = decrypt(item.accessTokenEnc);
 
+  // Looked up once rather than per-transaction — an initial sync can pull
+  // thousands of rows, and this loop used to issue a query for each one.
+  const accounts = await prisma.account.findMany({
+    where: { plaidItemId: item.id },
+    select: { id: true, plaidAccountId: true },
+  });
+  const accountIdByPlaidId = new Map(
+    accounts.filter((a) => a.plaidAccountId).map((a) => [a.plaidAccountId as string, a.id])
+  );
+
   let cursor = item.transactionsCursor ?? undefined;
   let added = 0;
   let modified = 0;
@@ -21,13 +31,13 @@ export async function syncTransactionsForItem(plaidItemDbId: string) {
     });
 
     for (const tx of data.added) {
-      const account = await prisma.account.findUnique({ where: { plaidAccountId: tx.account_id } });
-      if (!account) continue;
+      const accountId = accountIdByPlaidId.get(tx.account_id);
+      if (!accountId) continue;
       await prisma.transaction.upsert({
         where: { plaidTransactionId: tx.transaction_id },
         create: {
           plaidTransactionId: tx.transaction_id,
-          accountId: account.id,
+          accountId,
           amount: tx.amount,
           date: new Date(tx.date),
           name: tx.name,

@@ -47,6 +47,7 @@ export async function fixZelleTransfers() {
         data: {
           transferPairId: received.id,
           categoryId: transferCategory?.id || null,
+          kind: "transfer",
         },
       });
 
@@ -55,6 +56,7 @@ export async function fixZelleTransfers() {
         data: {
           transferPairId: sent.id,
           categoryId: transferCategory?.id || null,
+          kind: "transfer",
         },
       });
 

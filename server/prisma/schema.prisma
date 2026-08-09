@@ -69,6 +69,14 @@ model Transaction {
   isManual            Boolean  @default(false)
   notes               String?
   transferPairId      String?  // Links to another transaction if this is part of an inter-account transfer
+
+  // What kind of money movement this is, independent of its category.
+  // Transfers are neither earning nor spending, so a single field beats
+  // repeating "is it the Transfer category OR does it have a pair id?" at
+  // every call site that touches money — miss one and transfers leak back in.
+  kind       String  @default("expense") // expense | income | transfer
+  kindLocked Boolean @default(false)     // user set it; re-sync must not clobber
+
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
@@ -79,6 +87,7 @@ model Transaction {
   @@index([categoryId])
   @@index([date])
   @@index([transferPairId])
+  @@index([kind])
 }
 
 model Budget {

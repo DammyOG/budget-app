@@ -136,6 +136,7 @@ export async function linkTransferPair(transaction1Id: string, transaction2Id: s
     data: {
       transferPairId: transaction2Id,
       categoryId: transferCategory?.id || null,
+      kind: "transfer",
     },
   });
 
@@ -144,6 +145,7 @@ export async function linkTransferPair(transaction1Id: string, transaction2Id: s
     data: {
       transferPairId: transaction1Id,
       categoryId: transferCategory?.id || null,
+      kind: "transfer",
     },
   });
 }
@@ -158,16 +160,35 @@ export async function unlinkTransferPair(transactionId: string) {
     return;
   }
 
-  // Unlink both transactions
-  await prisma.transaction.update({
-    where: { id: transactionId },
-    data: { transferPairId: null, categoryId: null },
+  const counterpart = await prisma.transaction.findUnique({
+    where: { id: transaction.transferPairId },
+    select: { id: true, amount: true },
   });
 
+  // Each leg reverts by its own direction. Forcing both to "expense" would turn
+  // the inflow into a negative expense that silently cancels out the outflow,
+  // leaving total spending unchanged after breaking the pair.
+  const kindByDirection = (amount: number) => (amount < 0 ? "income" : "expense");
+
   await prisma.transaction.update({
-    where: { id: transaction.transferPairId },
-    data: { transferPairId: null, categoryId: null },
+    where: { id: transactionId },
+    data: {
+      transferPairId: null,
+      categoryId: null,
+      kind: kindByDirection(transaction.amount),
+    },
   });
+
+  if (counterpart) {
+    await prisma.transaction.update({
+      where: { id: counterpart.id },
+      data: {
+        transferPairId: null,
+        categoryId: null,
+        kind: kindByDirection(counterpart.amount),
+      },
+    });
+  }
 }
 
 // Auto-detect and link high-confidence transfers

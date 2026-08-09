@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Account, api, Category, formatCurrency, Transaction } from "../lib/api";
+import { Account, api, Category, formatCurrency, formatSignedAmount, formatTransactionDate, Transaction, TransactionKind } from "../lib/api";
 import TransactionDetailModal from "../components/TransactionDetailModal";
 
 type SortField = "date" | "amount" | "name";
@@ -102,6 +102,17 @@ export default function Transactions() {
     }
 
     load();
+  };
+
+  // Setting the type by hand pins it, so a later re-categorization or sync
+  // won't quietly move it back.
+  const updateKind = async (tx: Transaction, kind: TransactionKind) => {
+    try {
+      await api.updateTransaction(tx.id, { kind });
+      load();
+    } catch (err: any) {
+      setError(err.message);
+    }
   };
 
   const categorizeAllSimilar = async () => {
@@ -348,6 +359,7 @@ export default function Transactions() {
               <th className="px-4 py-2">Date</th>
               <th className="px-4 py-2">Name</th>
               <th className="px-4 py-2">Account</th>
+              <th className="px-4 py-2">Type</th>
               <th className="px-4 py-2">Category</th>
               <th className="px-4 py-2 text-right">Amount</th>
             </tr>
@@ -359,17 +371,37 @@ export default function Transactions() {
                 className="hover:bg-gray-50 cursor-pointer transition-colors"
                 onClick={() => setSelectedTransaction(tx)}
               >
-                <td className="px-4 py-2 whitespace-nowrap">{new Date(tx.date).toLocaleDateString()}</td>
+                <td className="px-4 py-2 whitespace-nowrap">{formatTransactionDate(tx.date)}</td>
                 <td className="px-4 py-2">
                   {tx.name}
+                  {tx.kind === "transfer" && (
+                    <span
+                      className="ml-2 rounded-full bg-slate-200 px-2 py-0.5 text-xs text-slate-600"
+                      title="Excluded from income and spending"
+                    >
+                      ⇄ Transfer
+                    </span>
+                  )}
                   {tx.pending && <span className="ml-2 text-xs text-amber-600">pending</span>}
                 </td>
                 <td className="px-4 py-2 text-slate-500">{tx.account?.name}</td>
                 <td className="px-4 py-2" onClick={(e) => e.stopPropagation()}>
                   <select
+                    value={tx.kind}
+                    onChange={(e) => updateKind(tx, e.target.value as TransactionKind)}
+                    className="rounded border px-2 py-1 text-xs"
+                  >
+                    <option value="expense">Expense</option>
+                    <option value="income">Income</option>
+                    <option value="transfer">Transfer</option>
+                  </select>
+                </td>
+                <td className="px-4 py-2" onClick={(e) => e.stopPropagation()}>
+                  <select
                     value={tx.categoryId ?? ""}
                     onChange={(e) => updateCategory(tx, e.target.value)}
-                    className="rounded border px-2 py-1 text-xs"
+                    disabled={tx.kind === "transfer"}
+                    className="rounded border px-2 py-1 text-xs disabled:bg-slate-100 disabled:text-slate-400"
                   >
                     <option value="">Uncategorized</option>
                     {categories.map((c) => (
@@ -379,14 +411,22 @@ export default function Transactions() {
                     ))}
                   </select>
                 </td>
-                <td className={`px-4 py-2 text-right font-medium ${tx.amount > 0 ? "text-slate-900" : "text-emerald-600"}`}>
-                  {formatCurrency(tx.amount)}
+                <td
+                  className={`px-4 py-2 text-right font-medium ${
+                    tx.kind === "transfer"
+                      ? "text-slate-400"
+                      : tx.amount > 0
+                      ? "text-slate-900"
+                      : "text-emerald-600"
+                  }`}
+                >
+                  {formatSignedAmount(tx.amount)}
                 </td>
               </tr>
             ))}
             {transactions.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-slate-500">
+                <td colSpan={6} className="px-4 py-8 text-center text-slate-500">
                   No transactions found. Link an account and sync to pull in transaction history.
                 </td>
               </tr>

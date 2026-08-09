@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, formatCurrency, type TransferPair } from "../lib/api";
+import { api, formatCurrency, formatTransactionDate, type TransferPair } from "../lib/api";
 
 export default function Transfers() {
   const [potentialTransfers, setPotentialTransfers] = useState<TransferPair[]>([]);
@@ -132,7 +132,7 @@ export default function Transfers() {
                       <div className="text-xs text-gray-600">{pair.fromTransaction.accountName}</div>
                     </div>
                     <div className="text-xs text-gray-600">
-                      {new Date(pair.fromTransaction.date).toLocaleDateString()}
+                      {formatTransactionDate(pair.fromTransaction.date)}
                     </div>
                     <div className="text-lg font-bold text-red-600">
                       -{formatCurrency(pair.fromTransaction.amount)}
@@ -149,7 +149,7 @@ export default function Transfers() {
                       <div className="text-xs text-gray-600">{pair.toTransaction.accountName}</div>
                     </div>
                     <div className="text-xs text-gray-600">
-                      {new Date(pair.toTransaction.date).toLocaleDateString()}
+                      {formatTransactionDate(pair.toTransaction.date)}
                     </div>
                     <div className="text-lg font-bold text-green-600">
                       +{formatCurrency(pair.toTransaction.amount)}

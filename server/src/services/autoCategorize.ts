@@ -1,4 +1,5 @@
 import { prisma } from "../db";
+import { kindForCategory } from "./transactionKind";
 
 // Auto-categorization rules based on transaction name patterns
 // Rules are evaluated in order, first match wins
@@ -16,7 +17,11 @@ const CATEGORIZATION_RULES: { pattern: RegExp; category: string }[] = [
   { pattern: /discover cashback|citi.*rewards?|thank you points/i, category: "Rewards & Cashback" },
   { pattern: /credit card rewards|cc rewards|card rewards/i, category: "Rewards & Cashback" },
 
-  { pattern: /refund|reimbursement/i, category: "Other Income" },
+  // Refunds deliberately have NO rule of their own. A refund reverses a
+  // purchase rather than earning money, so it should land in the same category
+  // as the purchase and net against it — "AMAZON REFUND" falls through to the
+  // Amazon rule below and reduces Shopping. Categorizing refunds as income
+  // both inflated income and left the original category overstated.
 
   // Transfers (important - these should NOT count as spending)
   // Credit card payments
@@ -134,6 +139,22 @@ const CATEGORIZATION_RULES: { pattern: RegExp; category: string }[] = [
   { pattern: /fee|charge|service charge|atm|overdraft|late fee|penalty/i, category: "Fees & Charges" },
 ];
 
+// Applies a category and keeps "kind" consistent with it, unless the user has
+// overridden the kind by hand — in which case their choice wins.
+async function applyCategory(
+  transactionId: string,
+  categoryId: string,
+  kindLocked: boolean
+) {
+  await prisma.transaction.update({
+    where: { id: transactionId },
+    data: {
+      categoryId,
+      ...(kindLocked ? {} : { kind: await kindForCategory(categoryId) }),
+    },
+  });
+}
+
 export async function autoCategorizeTransaction(transactionId: string, transactionName: string) {
   // Get the transaction to check account type
   const transaction = await prisma.transaction.findUnique({
@@ -152,10 +173,7 @@ export async function autoCategorizeTransaction(transactionId: string, transacti
         where: { name: "Transfer" },
       });
       if (transferCategory) {
-        await prisma.transaction.update({
-          where: { id: transactionId },
-          data: { categoryId: transferCategory.id },
-        });
+        await applyCategory(transactionId, transferCategory.id, transaction.kindLocked);
         return transferCategory.name;
       }
     }
@@ -170,10 +188,7 @@ export async function autoCategorizeTransaction(transactionId: string, transacti
   });
 
   if (customRule) {
-    await prisma.transaction.update({
-      where: { id: transactionId },
-      data: { categoryId: customRule.categoryId },
-    });
+    await applyCategory(transactionId, customRule.categoryId, transaction.kindLocked);
     return customRule.category.name;
   }
 
@@ -185,10 +200,7 @@ export async function autoCategorizeTransaction(transactionId: string, transacti
       });
 
       if (category) {
-        await prisma.transaction.update({
-          where: { id: transactionId },
-          data: { categoryId: category.id },
-        });
+        await applyCategory(transactionId, category.id, transaction.kindLocked);
         return category.name;
       }
     }

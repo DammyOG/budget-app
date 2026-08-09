@@ -36,8 +36,18 @@ export default function Budgets() {
     summary?.spendingByCategory.find((s) => s.categoryId === categoryId)?.total || 0;
 
   const save = async (categoryId: string) => {
-    const amount = Number(drafts[categoryId] || 0);
-    if (!amount) return;
+    const raw = drafts[categoryId];
+    if (raw === undefined || raw === "") return;
+
+    const amount = Number(raw);
+    if (Number.isNaN(amount) || amount < 0) return;
+
+    // Skip the write (and the refetches it triggers) when blurring a field that
+    // wasn't changed. Compares against the saved budget rather than testing
+    // truthiness, because 0 is a real budget — "spend nothing here".
+    const existing = budgets.find((b) => b.categoryId === categoryId);
+    if (existing && existing.amount === amount) return;
+
     await api.setBudget(categoryId, month, amount);
     load();
   };

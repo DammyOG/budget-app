@@ -2,15 +2,19 @@ import { Router } from "express";
 import { prisma } from "../db";
 import { autoCategorizeAll } from "../services/autoCategorize";
 import { fixPaymentThankYou } from "../services/fixMiscategorized";
+import { kindForCategory } from "../services/transactionKind";
 
 const router = Router();
 
+const VALID_KINDS = new Set(["expense", "income", "transfer"]);
+
 router.get("/", async (req, res) => {
-  const { accountId, categoryId, search, startDate, endDate, limit } = req.query;
+  const { accountId, categoryId, kind, search, startDate, endDate, limit } = req.query;
 
   const where: any = {};
   if (accountId) where.accountId = String(accountId);
   if (categoryId) where.categoryId = categoryId === "uncategorized" ? null : String(categoryId);
+  if (kind) where.kind = String(kind);
   if (search) where.name = { contains: String(search) };
   if (startDate || endDate) {
     where.date = {};
@@ -28,9 +32,12 @@ router.get("/", async (req, res) => {
 });
 
 router.post("/manual", async (req, res) => {
-  const { accountId, amount, date, name, categoryId, notes } = req.body;
+  const { accountId, amount, date, name, categoryId, notes, kind } = req.body;
   if (!accountId || amount == null || !date || !name) {
     return res.status(400).json({ error: "accountId, amount, date, and name are required" });
+  }
+  if (kind && !VALID_KINDS.has(kind)) {
+    return res.status(400).json({ error: `kind must be one of: ${[...VALID_KINDS].join(", ")}` });
   }
   const transaction = await prisma.transaction.create({
     data: {
@@ -41,23 +48,50 @@ router.post("/manual", async (req, res) => {
       categoryId: categoryId || null,
       notes: notes || null,
       isManual: true,
+      // Defaults to expense regardless of sign — a negative manual amount is
+      // far more often a refund than income, and inferring "income" from the
+      // sign silently inflates the income figure.
+      kind: kind || (await kindForCategory(categoryId || null)),
+      kindLocked: !!kind,
     },
   });
   res.json(transaction);
 });
 
 router.patch("/:id", async (req, res) => {
-  const { categoryId, notes, name, amount, date } = req.body;
+  const { categoryId, notes, name, amount, date, kind } = req.body;
+
+  if (kind !== undefined && !VALID_KINDS.has(kind)) {
+    return res.status(400).json({ error: `kind must be one of: ${[...VALID_KINDS].join(", ")}` });
+  }
 
   // Get the transaction first to check if category is changing
   const oldTransaction = await prisma.transaction.findUnique({
     where: { id: req.params.id },
   });
 
+  // Reclassifying away from transfer has to break the pair, or the counterpart
+  // stays linked to a transaction that's no longer a transfer.
+  if (kind !== undefined && kind !== "transfer" && oldTransaction?.transferPairId) {
+    const { unlinkTransferPair } = await import("../services/detectTransfers");
+    await unlinkTransferPair(req.params.id);
+  }
+
+  // Changing the category implies a kind (income category -> income, and so
+  // on), unless the caller set kind explicitly in the same request.
+  const derivedKind =
+    kind === undefined && categoryId !== undefined && !oldTransaction?.kindLocked
+      ? await kindForCategory(categoryId || null)
+      : undefined;
+
   const transaction = await prisma.transaction.update({
     where: { id: req.params.id },
     data: {
       categoryId: categoryId === undefined ? undefined : categoryId || null,
+      kind: kind === undefined ? derivedKind : kind,
+      // Only an explicit kind change locks it; inheriting kind from a category
+      // shouldn't freeze it against future re-categorization.
+      kindLocked: kind === undefined ? undefined : true,
       notes: notes === undefined ? undefined : notes,
       name: name === undefined ? undefined : name,
       amount: amount === undefined ? undefined : Number(amount),

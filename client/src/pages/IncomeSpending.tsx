@@ -16,7 +16,7 @@ import {
   Area,
   AreaChart,
 } from "recharts";
-import { api, formatCurrency, type IncomeSpendingSummary, type Transaction, type Category } from "../lib/api";
+import { api, formatCurrency, formatTransactionDate, type IncomeSpendingSummary, type Transaction, type Category } from "../lib/api";
 import TransactionDetailModal from "../components/TransactionDetailModal";
 
 type DateRange = "month" | "year" | "all-time" | "custom";
@@ -745,7 +745,7 @@ export default function IncomeSpending() {
                                   <div className="flex-1 min-w-0">
                                     <div className="text-sm font-medium text-gray-900 truncate">{tx.name}</div>
                                     <div className="text-xs text-gray-500">
-                                      {new Date(tx.date).toLocaleDateString()} · {tx.account.name}
+                                      {formatTransactionDate(tx.date)} · {tx.account.name}
                                     </div>
                                   </div>
                                   <div className="flex items-center gap-3">
@@ -838,7 +838,7 @@ export default function IncomeSpending() {
                                   <div className="flex-1 min-w-0">
                                     <div className="text-sm font-medium text-gray-900 truncate">{tx.name}</div>
                                     <div className="text-xs text-gray-500">
-                                      {new Date(tx.date).toLocaleDateString()} · {tx.account.name}
+                                      {formatTransactionDate(tx.date)} · {tx.account.name}
                                     </div>
                                   </div>
                                   <div className="flex items-center gap-3">

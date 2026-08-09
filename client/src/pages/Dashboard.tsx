@@ -110,6 +110,32 @@ export default function Dashboard() {
             </div>
           </div>
 
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="rounded-lg border bg-white p-4">
+              <div className="text-sm text-slate-500">Income this month</div>
+              <div className="text-2xl font-semibold text-emerald-600">{formatCurrency(summary.income)}</div>
+            </div>
+            <div className="rounded-lg border bg-white p-4">
+              <div className="text-sm text-slate-500">Spending this month</div>
+              <div className="text-2xl font-semibold">{formatCurrency(summary.spending)}</div>
+            </div>
+            <div className="rounded-lg border bg-white p-4">
+              <div className="text-sm text-slate-500">Net cash flow</div>
+              <div
+                className={`text-2xl font-semibold ${
+                  summary.netCashFlow < 0 ? "text-red-600" : "text-emerald-600"
+                }`}
+              >
+                {formatCurrency(summary.netCashFlow)}
+              </div>
+            </div>
+          </div>
+
+          <p className="text-xs text-slate-400">
+            Transfers between your own accounts (and credit card payments) are excluded from income and
+            spending.
+          </p>
+
           <div className="rounded-lg border bg-white p-4">
             <h2 className="font-medium mb-4">Spending by category ({month})</h2>
             {summary.spendingByCategory.length === 0 ? (

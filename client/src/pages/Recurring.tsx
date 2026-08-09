@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, formatCurrency, type RecurringTransaction, type RecurringStats } from "../lib/api";
+import { api, formatCurrency, formatTransactionDate, type RecurringTransaction, type RecurringStats } from "../lib/api";
 
 export default function Recurring() {
   const [recurring, setRecurring] = useState<RecurringTransaction[]>([]);
@@ -192,10 +192,10 @@ export default function Recurring() {
                           {item.count} occurrences
                         </span>
                         <span className="text-xs">
-                          Last: {new Date(item.lastDate).toLocaleDateString()}
+                          Last: {formatTransactionDate(item.lastDate)}
                         </span>
                         <span className="text-xs">
-                          Next: {new Date(item.nextExpectedDate).toLocaleDateString()}
+                          Next: {formatTransactionDate(item.nextExpectedDate)}
                         </span>
                       </div>
                     </div>

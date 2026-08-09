@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, formatCurrency, Transaction, Category } from "../lib/api";
+import { api, formatCurrency, formatTransactionDate, Transaction, Category } from "../lib/api";
 
 export default function ReviewCategories() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -209,7 +209,7 @@ export default function ReviewCategories() {
             <div>
               <span className="text-gray-500">Date:</span>
               <span className="ml-2 font-medium text-gray-900">
-                {new Date(currentTransaction.date).toLocaleDateString()}
+                {formatTransactionDate(currentTransaction.date)}
               </span>
             </div>
             <div>

@@ -93,6 +93,61 @@ The app runs at http://localhost:5173 (proxies `/api` to the backend).
   vs. budget with progress bars
 - **Dashboard** with spending-by-category breakdown and budget tracking
 
+## How money movement is classified
+
+Every transaction carries a **kind** in addition to its category, because not
+all money movement is spending:
+
+| Kind | Meaning | Counted in |
+|---|---|---|
+| `expense` | Money leaving your net worth | Spending |
+| `income` | Money entering your net worth | Income |
+| `transfer` | Money moving between your own accounts | Neither |
+
+Without that distinction a Zelle from BofA checking to Chase reads as $500 of
+"spending" even though you still have the money, moving cash into Ally savings
+looks like spending rather than saving, and — worst — **a credit card payment
+gets counted twice**: once when it leaves checking, and again as the purchases
+on the card it paid off.
+
+Transfers are paired by `transferPairId` and both legs are excluded from income
+and spending. Detection is automatic (matching amount, opposite direction,
+different accounts, within 3 days) with a review page at **Transfers**. Nothing
+is final: the **Type** dropdown on any transaction overrides the classification,
+and a manual choice is pinned so later syncs and re-categorization won't undo it.
+
+Breaking a pair reclassifies each leg by its own direction — the outflow becomes
+spending, the inflow becomes income.
+
+### Zelle, specifically
+
+Zelle is ambiguous, so it isn't classified by name alone:
+
+- **To your own account at another bank** → paired as a transfer, excluded from
+  spending.
+- **To a person** (rent, splitting dinner) → real spending; categorize normally.
+- **From a person** → income, unless it pairs with one of your own accounts.
+
+### Refunds
+
+A refund is a negative expense in the category it came from, so a $40 Amazon
+return drops Shopping from $200 to $160 rather than adding $40 of "income".
+
+## Verifying the money model
+
+The classification logic has an end-to-end test that runs against the API and
+needs no Plaid connectivity. With the server running:
+
+```bash
+cd server
+npm run verify:money-model
+```
+
+It creates temporary accounts, simulates a Zelle pair, a credit card payment, a
+paycheck and a refund, asserts that `/dashboard/summary` and
+`/dashboard/income-spending` agree, checks that overrides survive
+re-categorization, then cleans up after itself.
+
 ## Notes on security
 
 - Plaid access tokens are encrypted at rest (AES-256-GCM) using
