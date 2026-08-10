@@ -7,7 +7,9 @@ export default defineConfig({
     port: 5173,
     host: true,
     allowedHosts: [
-      "562a-2600-4040-2ecf-2800-349e-bfbe-dad-13b9.ngrok-free.app",
+      // Any device on the Tailscale tailnet (MagicDNS hostnames like
+      // dami-linux.tailf16233.ts.net). Access by IP works regardless.
+      ".tailf16233.ts.net",
     ],
     proxy: {
       "/api": {
