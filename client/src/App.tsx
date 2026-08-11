@@ -10,7 +10,7 @@ import ReviewCategories from "./pages/ReviewCategories";
 import OAuthReturn from "./pages/OAuthReturn";
 
 const navLinkClass = ({ isActive }: { isActive: boolean }) =>
-  `px-3 py-2 rounded-md text-sm font-medium ${
+  `px-3 py-2 rounded-md text-sm font-medium whitespace-nowrap shrink-0 ${
     isActive ? "bg-indigo-600 text-white" : "text-slate-600 hover:bg-slate-200"
   }`;
 
@@ -18,9 +18,11 @@ export default function App() {
   return (
     <div className="min-h-screen">
       <header className="border-b bg-white">
-        <div className="mx-auto max-w-6xl px-4 py-3 flex items-center justify-between">
-          <span className="text-lg font-semibold">💰 Budget App</span>
-          <nav className="flex gap-2">
+        <div className="mx-auto max-w-6xl px-4 py-3 flex items-center gap-4">
+          <span className="text-lg font-semibold shrink-0">💰 Budget App</span>
+          {/* Scrolls within itself instead of forcing the whole page wider
+              than the viewport — 8 links don't fit a phone screen otherwise. */}
+          <nav className="flex gap-2 overflow-x-auto">
             <NavLink to="/" end className={navLinkClass}>
               Dashboard
             </NavLink>
@@ -48,7 +50,7 @@ export default function App() {
           </nav>
         </div>
       </header>
-      <main className="mx-auto max-w-6xl px-4 py-6">
+      <main className="mx-auto max-w-6xl px-4 py-6 overflow-x-hidden">
         <Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/income-spending" element={<IncomeSpending />} />

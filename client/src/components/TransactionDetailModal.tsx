@@ -1,16 +1,33 @@
 import { useState } from "react";
-import { api, formatCurrency, formatSignedAmount, Transaction, Category } from "../lib/api";
+import { api, formatSignedAmount, Transaction, Category, TransactionKind } from "../lib/api";
+
+const KIND_LABELS: Record<TransactionKind, string> = {
+  expense: "Expense",
+  income: "Income",
+  transfer: "Transfer",
+};
 
 interface Props {
   transaction: Transaction;
   categories: Category[];
   onClose: () => void;
   onUpdate: () => void;
+  // Fired only when the category actually changed, separately from onUpdate,
+  // so the caller can offer "apply to every transaction with this name"
+  // without having to diff the transaction itself.
+  onCategorized?: (categoryId: string) => void;
 }
 
-export default function TransactionDetailModal({ transaction, categories, onClose, onUpdate }: Props) {
+export default function TransactionDetailModal({
+  transaction,
+  categories,
+  onClose,
+  onUpdate,
+  onCategorized,
+}: Props) {
   const [editing, setEditing] = useState(false);
   const [categoryId, setCategoryId] = useState(transaction.categoryId || "");
+  const [kind, setKind] = useState<TransactionKind>(transaction.kind);
   const [notes, setNotes] = useState(transaction.notes || "");
   const [saving, setSaving] = useState(false);
 
@@ -19,8 +36,13 @@ export default function TransactionDetailModal({ transaction, categories, onClos
     try {
       await api.updateTransaction(transaction.id, {
         categoryId: categoryId || null,
+        // Sending kind only when it actually changed avoids re-locking it
+        // (and, for a paired transfer, breaking the pair) on every save when
+        // the user only meant to edit notes.
+        kind: kind !== transaction.kind ? kind : undefined,
         notes: notes || null,
       });
+      if (categoryId && categoryId !== transaction.categoryId) onCategorized?.(categoryId);
       onUpdate();
       setEditing(false);
     } catch (err) {
@@ -126,6 +148,35 @@ export default function TransactionDetailModal({ transaction, categories, onClos
             </div>
           </div>
 
+          {/* Type */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
+            {editing ? (
+              <>
+                <select
+                  value={kind}
+                  onChange={(e) => setKind(e.target.value as TransactionKind)}
+                  className="w-full rounded border px-3 py-2"
+                >
+                  {(Object.keys(KIND_LABELS) as TransactionKind[]).map((k) => (
+                    <option key={k} value={k}>
+                      {KIND_LABELS[k]}
+                    </option>
+                  ))}
+                </select>
+                {transaction.kind === "transfer" && kind !== "transfer" && transaction.transferPairId && (
+                  <p className="text-xs text-amber-600 mt-1">
+                    This will unpair it from its matched transfer on the other account.
+                  </p>
+                )}
+              </>
+            ) : (
+              <span className="px-3 py-2 bg-gray-50 rounded border text-gray-900 inline-block">
+                {KIND_LABELS[transaction.kind]}
+              </span>
+            )}
+          </div>
+
           {/* Category */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
@@ -133,7 +184,8 @@ export default function TransactionDetailModal({ transaction, categories, onClos
               <select
                 value={categoryId}
                 onChange={(e) => setCategoryId(e.target.value)}
-                className="w-full rounded border px-3 py-2"
+                disabled={kind === "transfer"}
+                className="w-full rounded border px-3 py-2 disabled:bg-gray-100 disabled:text-gray-400"
               >
                 <option value="">Uncategorized</option>
                 {categories.map((c) => (
@@ -179,6 +231,7 @@ export default function TransactionDetailModal({ transaction, categories, onClos
                 onClick={() => {
                   setEditing(false);
                   setCategoryId(transaction.categoryId || "");
+                  setKind(transaction.kind);
                   setNotes(transaction.notes || "");
                 }}
                 className="px-4 py-2 border border-gray-300 rounded text-gray-700 hover:bg-gray-50"
