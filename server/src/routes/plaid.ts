@@ -1,9 +1,8 @@
 import { Router } from "express";
 import { plaidClient, PLAID_PRODUCTS, PLAID_OPTIONAL_PRODUCTS, PLAID_COUNTRY_CODES } from "../plaid";
 import { prisma } from "../db";
-import { encrypt } from "../crypto";
-import { syncAccountsForItem } from "../services/syncAccounts";
-import { syncTransactionsForItem } from "../services/syncTransactions";
+import { encrypt, decrypt } from "../crypto";
+import { syncItem } from "../services/syncItem";
 
 const router = Router();
 
@@ -29,6 +28,27 @@ router.post("/create_link_token", async (req, res) => {
   } catch (err: any) {
     console.error(err.response?.data || err);
     res.status(500).json({ error: err.response?.data?.error_message || "Failed to create link token" });
+  }
+});
+
+// Plaid's "update mode": reconnecting an expired bank login through Link
+// without creating a second, duplicate item. The existing access token is
+// reused, so nothing needs exchanging on success — just re-sync.
+router.post("/create_update_link_token/:itemId", async (req, res) => {
+  try {
+    const item = await prisma.plaidItem.findUniqueOrThrow({ where: { id: req.params.itemId } });
+    const { data } = await plaidClient.linkTokenCreate({
+      user: { client_user_id: LOCAL_USER_ID },
+      client_name: "Budget App",
+      access_token: decrypt(item.accessTokenEnc),
+      country_codes: PLAID_COUNTRY_CODES,
+      language: "en",
+      redirect_uri: process.env.PLAID_REDIRECT_URI || undefined,
+    });
+    res.json({ linkToken: data.link_token });
+  } catch (err: any) {
+    console.error(err.response?.data || err);
+    res.status(500).json({ error: err.response?.data?.error_message || "Failed to create reconnect link" });
   }
 });
 
@@ -61,12 +81,7 @@ router.post("/exchange_public_token", async (req, res) => {
       },
     });
 
-    await syncAccountsForItem(item.id);
-    await syncTransactionsForItem(item.id).catch((err) => {
-      // Investment-only items (e.g. some Robinhood/IRA accounts) may not
-      // support /transactions/sync — balances still linked fine above.
-      console.warn("Transactions sync skipped for item", item.id, err.response?.data || err.message);
-    });
+    await syncItem(item.id);
 
     res.json({ success: true, institutionName });
   } catch (err: any) {
@@ -77,12 +92,17 @@ router.post("/exchange_public_token", async (req, res) => {
 
 router.post("/sync/:itemId", async (req, res) => {
   try {
-    const accounts = await syncAccountsForItem(req.params.itemId);
-    const txResult = await syncTransactionsForItem(req.params.itemId).catch(() => null);
-    res.json({ accounts, transactions: txResult });
+    const result = await syncItem(req.params.itemId);
+    res.json(result);
   } catch (err: any) {
     console.error(err.response?.data || err);
-    res.status(500).json({ error: "Sync failed" });
+    const needsReauth = err.response?.data?.error_code === "ITEM_LOGIN_REQUIRED";
+    res.status(500).json({
+      error: needsReauth
+        ? "This bank login has expired and needs to be reconnected."
+        : err.response?.data?.error_message || "Sync failed",
+      needsReauth,
+    });
   }
 });
 
@@ -91,11 +111,15 @@ router.post("/sync_all", async (req, res) => {
   const results = [];
   for (const item of items) {
     try {
-      const accounts = await syncAccountsForItem(item.id);
-      const txResult = await syncTransactionsForItem(item.id).catch(() => null);
-      results.push({ itemId: item.id, institutionName: item.institutionName, accounts, transactions: txResult });
+      const result = await syncItem(item.id);
+      results.push({ itemId: item.id, institutionName: item.institutionName, ...result });
     } catch (err: any) {
-      results.push({ itemId: item.id, institutionName: item.institutionName, error: true });
+      results.push({
+        itemId: item.id,
+        institutionName: item.institutionName,
+        error: err.response?.data?.error_message || err.message || "Sync failed",
+        needsReauth: err.response?.data?.error_code === "ITEM_LOGIN_REQUIRED",
+      });
     }
   }
   res.json({ results });

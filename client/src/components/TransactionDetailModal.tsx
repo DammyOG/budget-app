@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { api, formatSignedAmount, Transaction, Category, TransactionKind } from "../lib/api";
+import { useToast } from "./ToastProvider";
 
 const KIND_LABELS: Record<TransactionKind, string> = {
   expense: "Expense",
@@ -25,6 +26,7 @@ export default function TransactionDetailModal({
   onUpdate,
   onCategorized,
 }: Props) {
+  const toast = useToast();
   const [editing, setEditing] = useState(false);
   const [categoryId, setCategoryId] = useState(transaction.categoryId || "");
   const [kind, setKind] = useState<TransactionKind>(transaction.kind);
@@ -45,8 +47,8 @@ export default function TransactionDetailModal({
       if (categoryId && categoryId !== transaction.categoryId) onCategorized?.(categoryId);
       onUpdate();
       setEditing(false);
-    } catch (err) {
-      alert("Failed to save changes");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to save changes");
     } finally {
       setSaving(false);
     }

@@ -23,28 +23,44 @@ export default function App() {
           {/* Scrolls within itself instead of forcing the whole page wider
               than the viewport — 8 links don't fit a phone screen otherwise. */}
           <nav className="flex gap-2 overflow-x-auto">
-            <NavLink to="/" end className={navLinkClass}>
+            <NavLink to="/" end className={navLinkClass} title="Net worth, income vs. spending, and budget progress">
               Dashboard
             </NavLink>
-            <NavLink to="/income-spending" className={navLinkClass}>
+            <NavLink
+              to="/income-spending"
+              className={navLinkClass}
+              title="Income and expenses by category and month; clean up transfers"
+            >
               Income & Spending
             </NavLink>
-            <NavLink to="/accounts" className={navLinkClass}>
+            <NavLink to="/accounts" className={navLinkClass} title="Link banks, add manual accounts, manage balances">
               Accounts
             </NavLink>
-            <NavLink to="/transactions" className={navLinkClass}>
+            <NavLink
+              to="/transactions"
+              className={navLinkClass}
+              title="Search, filter, and categorize every transaction"
+            >
               Transactions
             </NavLink>
-            <NavLink to="/budgets" className={navLinkClass}>
+            <NavLink to="/budgets" className={navLinkClass} title="Set and track monthly spending limits by category">
               Budgets
             </NavLink>
-            <NavLink to="/recurring" className={navLinkClass}>
+            <NavLink to="/recurring" className={navLinkClass} title="Subscriptions and bills detected automatically">
               Recurring
             </NavLink>
-            <NavLink to="/review" className={navLinkClass}>
+            <NavLink
+              to="/review"
+              className={navLinkClass}
+              title="Train the auto-categorizer by reviewing transactions"
+            >
               Review
             </NavLink>
-            <NavLink to="/transfers" className={navLinkClass}>
+            <NavLink
+              to="/transfers"
+              className={navLinkClass}
+              title="Review and link money moving between your own accounts"
+            >
               Transfers
             </NavLink>
           </nav>

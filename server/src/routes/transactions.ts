@@ -9,7 +9,8 @@ const router = Router();
 const VALID_KINDS = new Set(["expense", "income", "transfer"]);
 
 router.get("/", async (req, res) => {
-  const { accountId, categoryId, kind, search, startDate, endDate, limit } = req.query;
+  const { accountId, categoryId, kind, search, startDate, endDate, minAmount, maxAmount, pendingOnly, limit, offset } =
+    req.query;
 
   const where: any = {};
   if (accountId) where.accountId = String(accountId);
@@ -21,14 +22,44 @@ router.get("/", async (req, res) => {
     if (startDate) where.date.gte = new Date(String(startDate));
     if (endDate) where.date.lte = new Date(String(endDate));
   }
+  // Applied server-side, not just to whatever page happens to be loaded —
+  // filtering only the fetched rows would silently miss matches sitting on
+  // a later page the client hasn't asked for yet.
+  if (minAmount || maxAmount) {
+    // Filtering is on magnitude ("at least $50"), not signed value, to match
+    // how the UI presents amount range — SQLite has no native ABS() filter
+    // via Prisma, so match both the positive and negative side of the range
+    // explicitly instead. Leaving either bound unset (rather than defaulting
+    // it to 0) would otherwise let it match every amount on the other side
+    // of zero.
+    const min = minAmount ? Number(minAmount) : 0;
+    const max = maxAmount ? Number(maxAmount) : undefined;
+    where.OR = [
+      { amount: { gte: min, ...(max !== undefined ? { lte: max } : {}) } },
+      { amount: { lte: -min, ...(max !== undefined ? { gte: -max } : {}) } },
+    ];
+  }
+  if (pendingOnly === "true") where.pending = true;
 
-  const transactions = await prisma.transaction.findMany({
-    where,
-    orderBy: { date: "desc" },
-    take: limit ? Number(limit) : 500,
-    include: { account: { select: { name: true, institutionName: true } }, category: true },
-  });
-  res.json(transactions);
+  const take = limit ? Number(limit) : 100;
+  const skip = offset ? Number(offset) : 0;
+
+  // Fetched alongside the page rather than assumed, so the client can tell
+  // "you've seen everything" apart from "there's 3,000 more rows past the
+  // 500th" — silently capping at a fixed number with no total made older
+  // transactions disappear from the list with no indication anything was cut.
+  const [transactions, total] = await Promise.all([
+    prisma.transaction.findMany({
+      where,
+      orderBy: { date: "desc" },
+      take,
+      skip,
+      include: { account: { select: { name: true, institutionName: true } }, category: true },
+    }),
+    prisma.transaction.count({ where }),
+  ]);
+
+  res.json({ transactions, total, hasMore: skip + transactions.length < total });
 });
 
 router.post("/manual", async (req, res) => {

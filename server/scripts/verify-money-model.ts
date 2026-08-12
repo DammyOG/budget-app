@@ -29,9 +29,14 @@ function check(label: string, actual: any, expected: any) {
 }
 
 (async () => {
-  // Clean slate: drop anything left behind by a previous run.
+  // Clean slate: drop anything left behind by a previous run (including a
+  // prior run that got interrupted before reaching its own cleanup at the
+  // end, which would otherwise leave these sitting in the archive).
   for (const a of await api("/accounts")) {
     if (a.name.startsWith("VERIFY-")) await api(`/accounts/${a.id}`, { method: "DELETE" });
+  }
+  for (const a of await api("/accounts/archived")) {
+    if (a.name.startsWith("VERIFY-")) await api(`/accounts/${a.id}/permanent`, { method: "DELETE" });
   }
 
   const mkAccount = (name: string, institutionName: string, type: string, currentBalance: number) =>
@@ -78,7 +83,7 @@ function check(label: string, actual: any, expected: any) {
     body: JSON.stringify({ transaction1Id: cardPayOut.id, transaction2Id: cardPayIn.id }),
   });
 
-  const all = await api("/transactions?limit=200");
+  const { transactions: all } = await api("/transactions?limit=200");
   const t = (name: string) => all.find((x: any) => x.name === name);
 
   console.log("\nTransfer pairing:");
@@ -132,7 +137,7 @@ function check(label: string, actual: any, expected: any) {
     method: "PATCH",
     body: JSON.stringify({ kind: "expense" }),
   });
-  const after = await api("/transactions?limit=200");
+  const { transactions: after } = await api("/transactions?limit=200");
   const reclassified = after.find((x: any) => x.id === zelleOut.id);
   const counterpart = after.find((x: any) => x.id === zelleIn.id);
 
@@ -150,10 +155,16 @@ function check(label: string, actual: any, expected: any) {
 
   // Auto-categorization must not overwrite a hand-set kind.
   await api("/transactions/auto-categorize", { method: "POST" });
-  const afterAuto = (await api("/transactions?limit=200")).find((x: any) => x.id === zelleOut.id);
+  const { transactions: afterAutoAll } = await api("/transactions?limit=200");
+  const afterAuto = afterAutoAll.find((x: any) => x.id === zelleOut.id);
   check("Manual kind survives auto-categorize", afterAuto.kind, "expense");
 
-  for (const a of [checking, savings, card]) await api(`/accounts/${a.id}`, { method: "DELETE" });
+  // Permanent, not the regular DELETE (which now archives) — a test run
+  // shouldn't leave anything behind, archived or otherwise.
+  for (const a of [checking, savings, card]) {
+    await api(`/accounts/${a.id}`, { method: "DELETE" });
+    await api(`/accounts/${a.id}/permanent`, { method: "DELETE" });
+  }
 
   console.log(`\n${passed} passed, ${failed} failed`);
   process.exit(failed > 0 ? 1 : 0);

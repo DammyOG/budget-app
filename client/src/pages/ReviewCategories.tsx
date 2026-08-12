@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
-import { api, formatCurrency, formatTransactionDate, Transaction, Category } from "../lib/api";
+import { api, formatSignedAmount, formatTransactionDate, Transaction, Category } from "../lib/api";
+import { useToast } from "../components/ToastProvider";
 
 export default function ReviewCategories() {
+  const toast = useToast();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -18,8 +20,10 @@ export default function ReviewCategories() {
   async function loadData() {
     setLoading(true);
     try {
-      const [txs, cats] = await Promise.all([
-        api.getTransactions({}),
+      const [{ transactions: txs }, cats] = await Promise.all([
+        // Review needs the full set to prioritize uncategorized rows across
+        // everything, not just the most recent page.
+        api.getTransactions({ limit: "100000" }),
         api.getCategories(),
       ]);
 
@@ -31,7 +35,7 @@ export default function ReviewCategories() {
       setCategories(cats);
       setStats({ reviewed: 0, corrected: 0, total: txs.length });
     } catch (err: any) {
-      alert(`Failed to load: ${err.message}`);
+      toast.error(`Failed to load: ${err.message}`);
     } finally {
       setLoading(false);
     }
@@ -76,19 +80,16 @@ export default function ReviewCategories() {
         showCompletionMessage();
       }
     } catch (err: any) {
-      alert(`Failed to update: ${err.message}`);
+      toast.error(`Failed to update: ${err.message}`);
     } finally {
       setProcessing(false);
     }
   }
 
   function showCompletionMessage() {
-    alert(
-      `🎉 Review Complete!\n\n` +
-      `Reviewed: ${stats.reviewed + 1} transactions\n` +
-      `Corrected: ${stats.corrected} categories\n` +
-      `Accuracy: ${stats.reviewed > 0 ? (((stats.reviewed - stats.corrected) / stats.reviewed) * 100).toFixed(1) : 0}%`
-    );
+    const reviewed = stats.reviewed + 1;
+    const accuracy = reviewed > 0 ? (((reviewed - stats.corrected) / reviewed) * 100).toFixed(1) : "0";
+    toast.success(`Review complete — ${reviewed} reviewed, ${stats.corrected} corrected, ${accuracy}% accuracy.`);
     loadData();
     setCurrentIndex(0);
   }
@@ -193,11 +194,25 @@ export default function ReviewCategories() {
               )}
             </div>
             <div className="text-right">
-              <div className={`text-3xl font-bold ${currentTransaction.amount > 0 ? "text-red-600" : "text-green-600"}`}>
-                {formatCurrency(currentTransaction.amount)}
+              <div
+                className={`text-3xl font-bold ${
+                  currentTransaction.kind === "transfer"
+                    ? "text-gray-500"
+                    : currentTransaction.amount > 0
+                    ? "text-red-600"
+                    : "text-green-600"
+                }`}
+              >
+                {formatSignedAmount(currentTransaction.amount)}
               </div>
               <div className="text-xs text-gray-500 mt-1">
-                {currentTransaction.amount > 0 ? "Expense" : "Income"}
+                {currentTransaction.kind === "transfer"
+                  ? "Transfer"
+                  : currentTransaction.kind === "income"
+                  ? "Income"
+                  : currentTransaction.amount < 0
+                  ? "Refund"
+                  : "Expense"}
               </div>
             </div>
           </div>

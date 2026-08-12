@@ -10,6 +10,9 @@ import {
   TransactionKind,
 } from "../lib/api";
 import TransactionDetailModal from "../components/TransactionDetailModal";
+import { useToast } from "../components/ToastProvider";
+
+const PAGE_SIZE = 100;
 
 interface Filters {
   accountId: string;
@@ -242,10 +245,15 @@ function FilterSheet({
 }
 
 export default function Transactions() {
+  const toast = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [total, setTotal] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [filters, setFilters] = useState<Filters>({
     ...EMPTY_FILTERS,
@@ -264,18 +272,51 @@ export default function Transactions() {
     categoryName: string;
   } | null>(null);
 
-  const load = () => {
-    const params: Record<string, string> = {};
+  // Typing shouldn't fire a request per keystroke; wait for a pause.
+  useEffect(() => {
+    const t = setTimeout(() => setSearch(searchInput), 300);
+    return () => clearTimeout(t);
+  }, [searchInput]);
+
+  const buildParams = (offset: number) => {
+    const params: Record<string, string> = { limit: String(PAGE_SIZE), offset: String(offset) };
     if (filters.accountId) params.accountId = filters.accountId;
     if (filters.categoryId) params.categoryId = filters.categoryId;
     if (filters.kind) params.kind = filters.kind;
     if (filters.startDate) params.startDate = filters.startDate;
     if (filters.endDate) params.endDate = filters.endDate;
+    if (filters.minAmount) params.minAmount = filters.minAmount;
+    if (filters.maxAmount) params.maxAmount = filters.maxAmount;
+    if (filters.pendingOnly) params.pendingOnly = "true";
+    if (search) params.search = search;
+    return params;
+  };
 
+  // Any filter (or a new search term) starts over from the first page —
+  // otherwise "Load more" would keep appending results from the old filter.
+  const load = () => {
     api
-      .getTransactions(params)
-      .then(setTransactions)
+      .getTransactions(buildParams(0))
+      .then((res) => {
+        setTransactions(res.transactions);
+        setTotal(res.total);
+        setHasMore(res.hasMore);
+      })
       .catch((err) => setError(err.message));
+  };
+
+  const loadMore = async () => {
+    setLoadingMore(true);
+    try {
+      const res = await api.getTransactions(buildParams(transactions.length));
+      setTransactions((prev) => [...prev, ...res.transactions]);
+      setTotal(res.total);
+      setHasMore(res.hasMore);
+    } catch (err: any) {
+      toast.error(err.message);
+    } finally {
+      setLoadingMore(false);
+    }
   };
 
   useEffect(() => {
@@ -283,36 +324,16 @@ export default function Transactions() {
     api.getCategories().then(setCategories).catch((err) => setError(err.message));
   }, []);
 
-  useEffect(load, [filters]);
-
-  // Search and amount range are cheap enough to apply client-side against
-  // the already-fetched page, so typing doesn't round-trip to the server.
-  const visible = useMemo(() => {
-    let rows = transactions;
-    if (search) {
-      const q = search.toLowerCase();
-      rows = rows.filter((t) => t.name.toLowerCase().includes(q));
-    }
-    if (filters.minAmount) {
-      const min = Number(filters.minAmount);
-      rows = rows.filter((t) => Math.abs(t.amount) >= min);
-    }
-    if (filters.maxAmount) {
-      const max = Number(filters.maxAmount);
-      rows = rows.filter((t) => Math.abs(t.amount) <= max);
-    }
-    if (filters.pendingOnly) rows = rows.filter((t) => t.pending);
-    return rows;
-  }, [transactions, search, filters.minAmount, filters.maxAmount, filters.pendingOnly]);
+  useEffect(load, [filters, search]);
 
   const groups = useMemo(() => {
     const byDate: Record<string, Transaction[]> = {};
-    for (const tx of visible) {
+    for (const tx of transactions) {
       const key = tx.date.slice(0, 10);
       (byDate[key] ||= []).push(tx);
     }
     return Object.entries(byDate).sort(([a], [b]) => b.localeCompare(a));
-  }, [visible]);
+  }, [transactions]);
 
   const activeFilterCount = countActive(filters);
 
@@ -341,9 +362,9 @@ export default function Transactions() {
       const result = await api.categorizeAllSimilar(lastCategorized.name, lastCategorized.categoryId);
       setLastCategorized(null);
       load();
-      alert(`Categorized ${result.count} similar transaction${result.count !== 1 ? "s" : ""}.`);
+      toast.success(`Categorized ${result.count} similar transaction${result.count !== 1 ? "s" : ""}.`);
     } catch (err: any) {
-      alert(`Failed: ${err.message}`);
+      toast.error(`Failed: ${err.message}`);
     } finally {
       setProcessing(false);
     }
@@ -353,12 +374,12 @@ export default function Transactions() {
     setProcessing(true);
     try {
       const result = await api.autoCategorizeAll();
-      alert(
-        `Auto-categorization complete.\nNewly categorized: ${result.categorized}\nRe-categorized: ${result.recategorized}`
+      toast.success(
+        `Auto-categorization complete. Newly categorized: ${result.categorized}, re-categorized: ${result.recategorized}.`
       );
       load();
     } catch (err: any) {
-      alert(`Failed: ${err.message}`);
+      toast.error(`Failed: ${err.message}`);
     } finally {
       setProcessing(false);
       setShowMaintenance(false);
@@ -394,8 +415,8 @@ export default function Transactions() {
       <div className="flex gap-2">
         <input
           placeholder="Search transactions…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          value={searchInput}
+          onChange={(e) => setSearchInput(e.target.value)}
           className="flex-1 rounded border px-3 py-2 text-sm"
         />
         <button
@@ -435,7 +456,7 @@ export default function Transactions() {
       <div className="rounded-lg border bg-white overflow-hidden">
         {groups.length === 0 ? (
           <p className="px-4 py-10 text-center text-slate-500 text-sm">
-            {transactions.length === 0
+            {total === 0 && !search && activeFilterCount === 0
               ? "No transactions yet. Link an account and sync to pull in history."
               : "Nothing matches your search or filters."}
           </p>
@@ -452,6 +473,23 @@ export default function Transactions() {
               </div>
             </div>
           ))
+        )}
+        {transactions.length > 0 && (
+          <div className="px-4 py-3 border-t text-center">
+            {hasMore ? (
+              <button
+                onClick={loadMore}
+                disabled={loadingMore}
+                className="text-sm text-indigo-600 hover:text-indigo-500 disabled:opacity-50"
+              >
+                {loadingMore ? "Loading…" : `Load more (${transactions.length} of ${total})`}
+              </button>
+            ) : (
+              <span className="text-xs text-slate-400">
+                {total} transaction{total !== 1 ? "s" : ""} — that's all of them
+              </span>
+            )}
+          </div>
         )}
       </div>
 

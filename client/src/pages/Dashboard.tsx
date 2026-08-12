@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 import { api, currentMonth, DashboardSummary, formatCurrency } from "../lib/api";
+import OnboardingIntro from "../components/OnboardingIntro";
 
 const COLORS = [
   "#6366f1",
@@ -59,6 +60,8 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
+      <OnboardingIntro />
+
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="text-2xl font-semibold">Dashboard</h1>
         <div className="flex items-center gap-3">

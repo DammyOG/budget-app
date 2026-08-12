@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import { api, formatCurrency, formatTransactionDate, type TransferPair } from "../lib/api";
+import { useToast } from "../components/ToastProvider";
 
 export default function Transfers() {
+  const toast = useToast();
   const [potentialTransfers, setPotentialTransfers] = useState<TransferPair[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -36,7 +38,7 @@ export default function Transfers() {
         )
       );
     } catch (err: any) {
-      alert(`Failed to link transfer: ${err.message}`);
+      toast.error(`Failed to link transfer: ${err.message}`);
     } finally {
       setLinking(false);
     }
@@ -46,10 +48,10 @@ export default function Transfers() {
     setLinking(true);
     try {
       const result = await api.autoLinkTransfers();
-      alert(`Auto-linked ${result.linked} high-confidence transfers out of ${result.total} detected.`);
+      toast.success(`Auto-linked ${result.linked} high-confidence transfers out of ${result.total} detected.`);
       loadPotentialTransfers();
     } catch (err: any) {
-      alert(`Failed to auto-link: ${err.message}`);
+      toast.error(`Failed to auto-link: ${err.message}`);
     } finally {
       setLinking(false);
     }

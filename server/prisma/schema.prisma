@@ -17,6 +17,14 @@ model PlaidItem {
   institutionId   String?
   institutionName String?
   transactionsCursor String?
+
+  // Without these, a sync failure (most commonly an expired bank login) is
+  // invisible: the dashboard keeps confidently showing balances from weeks
+  // ago with nothing to say they're stale.
+  lastSyncedAt    DateTime?
+  needsReauth     Boolean  @default(false)
+  lastSyncError   String?
+
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
   accounts        Account[]
@@ -40,7 +48,10 @@ model Account {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
-  plaidItem    PlaidItem?    @relation(fields: [plaidItemId], references: [id], onDelete: Cascade)
+  // SetNull, not Cascade: removing an account archives it (see archivedAt)
+  // rather than deleting it, and revoking the underlying Plaid connection
+  // must not take the archived account's transaction history down with it.
+  plaidItem    PlaidItem?    @relation(fields: [plaidItemId], references: [id], onDelete: SetNull)
   transactions Transaction[]
 }
 

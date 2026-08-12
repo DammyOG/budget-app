@@ -9,7 +9,17 @@ router.get("/", async (req, res) => {
   const accounts = await prisma.account.findMany({
     where: { archivedAt: null },
     orderBy: [{ institutionName: "asc" }, { name: "asc" }],
-    include: { plaidItem: { select: { institutionName: true } } },
+    include: {
+      plaidItem: { select: { institutionName: true, lastSyncedAt: true, needsReauth: true, lastSyncError: true } },
+    },
+  });
+  res.json(accounts);
+});
+
+router.get("/archived", async (req, res) => {
+  const accounts = await prisma.account.findMany({
+    where: { archivedAt: { not: null } },
+    orderBy: { archivedAt: "desc" },
   });
   res.json(accounts);
 });
@@ -54,23 +64,61 @@ router.patch("/:id", async (req, res) => {
 router.delete("/:id", async (req, res) => {
   const account = await prisma.account.findUnique({ where: { id: req.params.id } });
   if (!account) return res.status(404).json({ error: "Not found" });
+  if (account.archivedAt) return res.status(400).json({ error: "Already removed" });
 
   const plaidItemId = account.plaidItemId;
-  await prisma.account.delete({ where: { id: req.params.id } });
+
+  // Archived rather than deleted: transaction history is a real financial
+  // record, not disposable — one misclick shouldn't be able to erase months
+  // of it. The account and its transactions stay in the database, just
+  // hidden from the normal account list.
+  await prisma.account.update({
+    where: { id: req.params.id },
+    data: { archivedAt: new Date() },
+  });
 
   if (plaidItemId) {
-    const remaining = await prisma.account.count({ where: { plaidItemId } });
-    if (remaining === 0) {
+    const remainingActive = await prisma.account.count({
+      where: { plaidItemId, archivedAt: null },
+    });
+    if (remainingActive === 0) {
       const item = await prisma.plaidItem.findUnique({ where: { id: plaidItemId } });
       if (item) {
         await plaidClient
           .itemRemove({ access_token: decrypt(item.accessTokenEnc) })
           .catch((err) => console.warn("itemRemove failed", err.response?.data || err.message));
+        // onDelete: SetNull on Account.plaidItem — this revokes the bank
+        // connection without touching the now-archived account rows or the
+        // transaction history attached to them.
         await prisma.plaidItem.delete({ where: { id: plaidItemId } });
       }
     }
   }
 
+  res.json({ success: true });
+});
+
+router.post("/:id/restore", async (req, res) => {
+  const account = await prisma.account.findUnique({ where: { id: req.params.id } });
+  if (!account) return res.status(404).json({ error: "Not found" });
+  if (!account.archivedAt) return res.status(400).json({ error: "Not archived" });
+
+  const restored = await prisma.account.update({
+    where: { id: req.params.id },
+    data: { archivedAt: null },
+  });
+  res.json(restored);
+});
+
+// Permanent delete, only ever offered on an already-archived account —
+// a second, deliberate step past the reversible one above.
+router.delete("/:id/permanent", async (req, res) => {
+  const account = await prisma.account.findUnique({ where: { id: req.params.id } });
+  if (!account) return res.status(404).json({ error: "Not found" });
+  if (!account.archivedAt) {
+    return res.status(400).json({ error: "Archive the account first before permanently deleting it" });
+  }
+  await prisma.account.delete({ where: { id: req.params.id } });
   res.json({ success: true });
 });
 

@@ -1,5 +1,12 @@
 import { useEffect, useState } from "react";
-import { api, formatCurrency, formatTransactionDate, type RecurringTransaction, type RecurringStats } from "../lib/api";
+import {
+  api,
+  formatCurrency,
+  formatSignedAmount,
+  formatTransactionDate,
+  type RecurringTransaction,
+  type RecurringStats,
+} from "../lib/api";
 
 export default function Recurring() {
   const [recurring, setRecurring] = useState<RecurringTransaction[]>([]);
@@ -224,12 +231,14 @@ export default function Recurring() {
                                 year: "numeric",
                                 month: "short",
                                 day: "numeric",
+                                // Stored at UTC midnight; without this it renders a day early.
+                                timeZone: "UTC",
                               })}
                             </div>
                             <div className="text-xs text-gray-500">{tx.accountName}</div>
                           </div>
                           <div className={`font-medium ${tx.amount > 0 ? "text-red-600" : "text-green-600"}`}>
-                            {formatCurrency(tx.amount)}
+                            {formatSignedAmount(tx.amount)}
                           </div>
                         </div>
                       ))}

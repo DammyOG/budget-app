@@ -18,6 +18,7 @@ import {
 } from "recharts";
 import { api, formatCurrency, formatTransactionDate, type IncomeSpendingSummary, type Transaction, type Category } from "../lib/api";
 import TransactionDetailModal from "../components/TransactionDetailModal";
+import { useToast } from "../components/ToastProvider";
 
 type DateRange = "month" | "year" | "all-time" | "custom";
 
@@ -28,6 +29,7 @@ const COLORS = [
 ];
 
 export default function IncomeSpending() {
+  const toast = useToast();
   const [data, setData] = useState<IncomeSpendingSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -45,6 +47,13 @@ export default function IncomeSpending() {
   const [categoryTransactions, setCategoryTransactions] = useState<Record<string, Transaction[]>>({});
   const [allCategories, setAllCategories] = useState<Category[]>([]);
   const [processing, setProcessing] = useState(false);
+  const [cleanupResult, setCleanupResult] = useState<{
+    categorized: number;
+    recategorized: number;
+    total: number;
+    linked: number;
+    zelleFixed?: number;
+  } | null>(null);
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
 
   useEffect(() => {
@@ -166,11 +175,14 @@ export default function IncomeSpending() {
       if (params.endDate) transactionsParams.endDate = params.endDate;
 
       try {
-        const transactions = await api.getTransactions(transactionsParams);
-        // Filter by income/expense and ensure they match the category
+        const { transactions } = await api.getTransactions(transactionsParams);
+        // Filter by income/expense and ensure they match the category.
+        // Keyed off kind, not raw sign — a refund is a negative expense, and
+        // splitting on sign here would have counted it as income even though
+        // the dashboard (which does use kind) correctly nets it against
+        // spending instead.
         const filtered = transactions.filter((t) => {
-          // Check if it's income or expense
-          const isCorrectType = isIncome ? t.amount < 0 : t.amount > 0;
+          const isCorrectType = isIncome ? t.kind === "income" : t.kind === "expense";
           // Check if category matches (or both are null for uncategorized)
           const isCategoryMatch = categoryId ? t.categoryId === categoryId : !t.categoryId;
           return isCorrectType && isCategoryMatch;
@@ -215,26 +227,20 @@ export default function IncomeSpending() {
       // Step 2: Auto-link high-confidence transfer pairs (includes Zelle fix)
       const linkResult = await api.autoLinkTransfers();
 
-      // Show results
-      const zelleMessage = linkResult.zelleFixed ? `\n• Fixed ${linkResult.zelleFixed} Zelle internal transfers` : "";
-      alert(
-        `✅ Cleanup Complete!\n\n` +
-        `Categorization:\n` +
-        `• Newly categorized: ${categorizeResult.categorized}\n` +
-        `• Re-categorized (fixed): ${categorizeResult.recategorized}\n` +
-        `• Total processed: ${categorizeResult.total}\n\n` +
-        `Transfers:\n` +
-        `• Linked ${linkResult.linked} transfer pairs${zelleMessage}\n\n` +
-        `Your income/spending totals have been updated!\n\n` +
-        `Note: Generic "payment thank you" messages are left uncategorized for manual review.`
-      );
+      setCleanupResult({
+        categorized: categorizeResult.categorized,
+        recategorized: categorizeResult.recategorized,
+        total: categorizeResult.total,
+        linked: linkResult.linked,
+        zelleFixed: linkResult.zelleFixed,
+      });
 
       // Reload data
       loadData();
       // Clear expanded categories cache
       setCategoryTransactions({});
     } catch (err: any) {
-      alert(`Failed to cleanup transfers: ${err.message}`);
+      toast.error(`Failed to clean up transfers: ${err.message}`);
     } finally {
       setProcessing(false);
     }
@@ -272,6 +278,33 @@ export default function IncomeSpending() {
           {processing ? "Processing..." : "🔄 Clean Up Transfers"}
         </button>
       </div>
+
+      {cleanupResult && (
+        <div className="mb-6 bg-green-50 border border-green-200 rounded-lg p-4 relative">
+          <button
+            onClick={() => setCleanupResult(null)}
+            className="absolute top-3 right-3 text-green-700 hover:text-green-900 text-lg leading-none"
+            aria-label="Dismiss"
+          >
+            ×
+          </button>
+          <h2 className="font-semibold text-green-900 mb-2">✅ Cleanup complete</h2>
+          <ul className="text-sm text-green-800 space-y-1">
+            <li>
+              Categorized {cleanupResult.categorized} new transaction{cleanupResult.categorized !== 1 ? "s" : ""}
+              {cleanupResult.recategorized > 0 && `, fixed ${cleanupResult.recategorized} miscategorized`} (
+              {cleanupResult.total} checked)
+            </li>
+            <li>
+              Linked {cleanupResult.linked} transfer pair{cleanupResult.linked !== 1 ? "s" : ""}
+              {cleanupResult.zelleFixed ? `, including ${cleanupResult.zelleFixed} Zelle transfers` : ""}
+            </li>
+          </ul>
+          <p className="text-xs text-green-700 mt-2">
+            Generic "payment thank you" messages are left uncategorized for manual review.
+          </p>
+        </div>
+      )}
 
       {/* Info box about transfers */}
       <div className="mb-6 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
@@ -647,49 +680,34 @@ export default function IncomeSpending() {
 
       {/* Month-by-Month Breakdown */}
       {data.byMonth && data.byMonth.length > 0 && (
-        <div className="bg-white p-6 rounded-lg shadow mb-6">
+        <div className="bg-white p-4 sm:p-6 rounded-lg shadow mb-6">
           <h2 className="text-xl font-bold mb-4">Month-by-Month Breakdown</h2>
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Month
-                  </th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Income
-                  </th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Expenses
-                  </th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Net
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {data.byMonth.map((month) => (
-                  <tr key={month.month}>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                      {formatMonth(month.month)}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-green-600">
-                      {formatCurrency(month.income)}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-red-600">
-                      {formatCurrency(month.expenses)}
-                    </td>
-                    <td
-                      className={`px-6 py-4 whitespace-nowrap text-sm text-right font-medium ${
-                        month.net >= 0 ? "text-blue-600" : "text-orange-600"
-                      }`}
-                    >
-                      {formatCurrency(month.net)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          {/*
+            Not a <table>: with four columns, a table on a phone either
+            overflows or hides columns behind a scroll with no indication
+            anything's cut off (Expenses/Net disappeared entirely in
+            testing). This wraps naturally at any width instead.
+          */}
+          <div className="divide-y divide-gray-200">
+            {data.byMonth.map((month) => (
+              <div key={month.month} className="py-3 flex flex-wrap items-center justify-between gap-x-6 gap-y-1">
+                <span className="text-sm font-medium text-gray-900 min-w-[7rem]">{formatMonth(month.month)}</span>
+                <div className="flex flex-wrap gap-x-5 gap-y-1 text-sm">
+                  <span className="text-green-600">
+                    <span className="text-gray-400 text-xs mr-1">Income</span>
+                    {formatCurrency(month.income)}
+                  </span>
+                  <span className="text-red-600">
+                    <span className="text-gray-400 text-xs mr-1">Expenses</span>
+                    {formatCurrency(month.expenses)}
+                  </span>
+                  <span className={`font-medium ${month.net >= 0 ? "text-blue-600" : "text-orange-600"}`}>
+                    <span className="text-gray-400 text-xs mr-1 font-normal">Net</span>
+                    {formatCurrency(month.net)}
+                  </span>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}

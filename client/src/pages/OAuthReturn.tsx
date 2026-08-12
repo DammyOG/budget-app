@@ -2,35 +2,58 @@ import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { usePlaidLink } from "react-plaid-link";
 import { api } from "../lib/api";
-import { PLAID_LINK_TOKEN_STORAGE_KEY } from "../lib/plaidOAuth";
+import {
+  PLAID_LINK_MODE_STORAGE_KEY,
+  PLAID_LINK_TOKEN_STORAGE_KEY,
+  PLAID_RECONNECT_ITEM_ID_STORAGE_KEY,
+  PlaidLinkMode,
+} from "../lib/plaidOAuth";
 
 // Landing point for Plaid's OAuth redirect: banks that use OAuth (Bank of
 // America, Capital One, etc.) send the whole browser here after the user
 // logs in at the bank, instead of resolving inside the original popup.
 // Link has to be re-initialized with the *same* link token used before the
-// redirect, plus the URL it just landed on, to pick the flow back up.
+// redirect, plus the URL it just landed on, to pick the flow back up. This
+// also covers reconnecting an expired login (update mode), which completes
+// differently — a re-sync instead of a public token exchange.
 export default function OAuthReturn() {
   const navigate = useNavigate();
   const [error, setError] = useState<string | null>(null);
   const [linkToken] = useState<string | null>(() => sessionStorage.getItem(PLAID_LINK_TOKEN_STORAGE_KEY));
+  const [mode] = useState<PlaidLinkMode>(
+    () => (sessionStorage.getItem(PLAID_LINK_MODE_STORAGE_KEY) as PlaidLinkMode) || "link"
+  );
+  const [reconnectItemId] = useState<string | null>(() =>
+    sessionStorage.getItem(PLAID_RECONNECT_ITEM_ID_STORAGE_KEY)
+  );
+
+  const cleanup = () => {
+    sessionStorage.removeItem(PLAID_LINK_TOKEN_STORAGE_KEY);
+    sessionStorage.removeItem(PLAID_LINK_MODE_STORAGE_KEY);
+    sessionStorage.removeItem(PLAID_RECONNECT_ITEM_ID_STORAGE_KEY);
+  };
 
   const onSuccess = useCallback(
     async (publicToken: string) => {
       try {
-        await api.exchangePublicToken(publicToken);
+        if (mode === "reconnect" && reconnectItemId) {
+          await api.syncItem(reconnectItemId);
+        } else {
+          await api.exchangePublicToken(publicToken);
+        }
       } catch (err: any) {
         setError(err.message);
         return;
       } finally {
-        sessionStorage.removeItem(PLAID_LINK_TOKEN_STORAGE_KEY);
+        cleanup();
       }
       navigate("/accounts");
     },
-    [navigate]
+    [navigate, mode, reconnectItemId]
   );
 
   const onExit = useCallback(() => {
-    sessionStorage.removeItem(PLAID_LINK_TOKEN_STORAGE_KEY);
+    cleanup();
     navigate("/accounts");
   }, [navigate]);
 
@@ -50,8 +73,7 @@ export default function OAuthReturn() {
       <div className="max-w-md mx-auto mt-16 text-center space-y-3">
         <h1 className="text-lg font-semibold">Link session expired</h1>
         <p className="text-sm text-slate-500">
-          This page only works right after starting a bank login from the Accounts page. Go back and try linking
-          again.
+          This page only works right after starting a bank login from the Accounts page. Go back and try again.
         </p>
         <button
           onClick={() => navigate("/accounts")}

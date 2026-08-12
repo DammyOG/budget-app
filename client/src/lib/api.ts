@@ -25,6 +25,15 @@ export interface Account {
   availableBalance: number | null;
   isoCurrencyCode: string | null;
   isManual: boolean;
+  archivedAt: string | null;
+  // Present only on Plaid-linked accounts (GET /accounts includes it via the
+  // relation); absent on manual accounts, which have nothing to sync.
+  plaidItem?: {
+    institutionName: string | null;
+    lastSyncedAt: string | null;
+    needsReauth: boolean;
+    lastSyncError: string | null;
+  } | null;
 }
 
 export interface Category {
@@ -131,6 +140,8 @@ export interface RecurringStats {
 
 export const api = {
   createLinkToken: () => request<{ linkToken: string }>("/plaid/create_link_token", { method: "POST" }),
+  createUpdateLinkToken: (itemId: string) =>
+    request<{ linkToken: string }>(`/plaid/create_update_link_token/${itemId}`, { method: "POST" }),
   exchangePublicToken: (publicToken: string) =>
     request<{ success: boolean; institutionName: string }>("/plaid/exchange_public_token", {
       method: "POST",
@@ -140,15 +151,20 @@ export const api = {
   syncItem: (itemId: string) => request(`/plaid/sync/${itemId}`, { method: "POST" }),
 
   getAccounts: () => request<Account[]>("/accounts"),
+  getArchivedAccounts: () => request<Account[]>("/accounts/archived"),
   addManualAccount: (data: Partial<Account>) =>
     request<Account>("/accounts/manual", { method: "POST", body: JSON.stringify(data) }),
   updateAccount: (id: string, data: Partial<Account>) =>
     request<Account>(`/accounts/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   deleteAccount: (id: string) => request(`/accounts/${id}`, { method: "DELETE" }),
+  restoreAccount: (id: string) => request<Account>(`/accounts/${id}/restore`, { method: "POST" }),
+  permanentlyDeleteAccount: (id: string) => request(`/accounts/${id}/permanent`, { method: "DELETE" }),
 
   getTransactions: (params: Record<string, string> = {}) => {
     const qs = new URLSearchParams(params).toString();
-    return request<Transaction[]>(`/transactions${qs ? `?${qs}` : ""}`);
+    return request<{ transactions: Transaction[]; total: number; hasMore: boolean }>(
+      `/transactions${qs ? `?${qs}` : ""}`
+    );
   },
   addManualTransaction: (data: Partial<Transaction>) =>
     request<Transaction>("/transactions/manual", { method: "POST", body: JSON.stringify(data) }),
@@ -216,4 +232,19 @@ export function formatTransactionDate(date: string | Date): string {
 
 export function currentMonth(): string {
   return new Date().toISOString().slice(0, 7);
+}
+
+// "Synced 2 hours ago" beats a raw timestamp for answering the question that
+// actually matters here: is this data current enough to trust right now?
+export function formatRelativeTime(iso: string | null): string {
+  if (!iso) return "Never synced";
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const minutes = Math.floor(diffMs / 60000);
+  if (minutes < 1) return "Just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
