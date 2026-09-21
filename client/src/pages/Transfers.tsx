@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, formatCurrency, formatTransactionDate, type TransferPair } from "../lib/api";
 import { useToast } from "../components/ToastProvider";
+import { Button, Card, EmptyState, PageHeader, Spinner } from "../components/ui";
 
 export default function Transfers() {
   const toast = useToast();
@@ -69,97 +70,95 @@ export default function Transfers() {
   }
 
   return (
-    <div className="p-8">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold">Transfer Detection</h1>
-        <button
-          onClick={autoLink}
-          disabled={linking || potentialTransfers.length === 0}
-          className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
-        >
-          Auto-Link High Confidence Transfers
-        </button>
-      </div>
+    <div className="space-y-4">
+      <PageHeader title="Transfers" subtitle="Money moving between your own accounts" />
 
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-        <h2 className="font-semibold text-blue-900 mb-2">What are transfer pairs?</h2>
-        <p className="text-sm text-blue-800">
-          Transfer pairs are transactions that represent the same money movement between your accounts (like moving
-          $1,499 from Bank of America to Ally). Linking them prevents these from being counted as both income and
-          expense, giving you accurate spending totals.
+      <Button
+        variant="primary"
+        className="w-full"
+        onClick={autoLink}
+        disabled={linking || potentialTransfers.length === 0}
+      >
+        Auto-link high-confidence pairs
+      </Button>
+
+      <details className="rounded-2xl border border-blue-200 bg-blue-50">
+        <summary className="flex min-h-[44px] cursor-pointer items-center px-4 text-sm font-medium text-blue-900">
+          What are transfer pairs?
+        </summary>
+        <p className="px-4 pb-4 text-sm text-blue-800">
+          Two transactions recording the same movement of money between your accounts — say $1,499 leaving Bank of
+          America and arriving at Ally. Linking them stops that one movement being counted as both income and
+          spending.
         </p>
-      </div>
+      </details>
 
-      {loading && <p>Loading potential transfers...</p>}
+      {loading && <Spinner label="Looking for transfers…" />}
 
-      {error && <p className="text-red-600">Error: {error}</p>}
+      {error && <Card className="border-red-200 bg-red-50 text-sm text-red-700">{error}</Card>}
 
       {!loading && !error && potentialTransfers.length === 0 && (
-        <div className="bg-white p-8 rounded-lg shadow text-center">
-          <p className="text-gray-500">No potential transfer pairs detected. All your transfers may already be linked!</p>
-        </div>
+        <EmptyState icon="⇄" title="Nothing to link" hint="No unlinked transfer pairs were found." />
       )}
 
       {!loading && !error && potentialTransfers.length > 0 && (
-        <div className="space-y-4">
-          <p className="text-sm text-gray-600">
-            Found {potentialTransfers.length} potential transfer pair{potentialTransfers.length !== 1 ? "s" : ""}. Review
-            and link them to exclude from income/spending calculations.
+        <div className="space-y-3">
+          <p className="text-sm text-slate-600">
+            Found {potentialTransfers.length} possible pair{potentialTransfers.length !== 1 ? "s" : ""}.
           </p>
 
-          {potentialTransfers.map((pair, index) => (
-            <div key={`${pair.fromTransaction.id}-${pair.toTransaction.id}`} className="bg-white p-6 rounded-lg shadow">
-              <div className="flex justify-between items-start mb-4">
-                <div>
-                  <span className={`inline-block px-2 py-1 rounded text-xs font-medium ${getConfidenceBadgeColor(pair.confidence)}`}>
-                    {pair.confidence} confidence
-                  </span>
-                </div>
-                <button
-                  onClick={() => linkPair(pair)}
-                  disabled={linking}
-                  className="px-4 py-2 bg-green-600 text-white text-sm rounded hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+          {potentialTransfers.map((pair) => (
+            <Card key={`${pair.fromTransaction.id}-${pair.toTransaction.id}`}>
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <span
+                  className={`rounded-full px-2 py-0.5 text-xs font-medium capitalize ${getConfidenceBadgeColor(
+                    pair.confidence
+                  )}`}
                 >
-                  Link as Transfer
-                </button>
+                  {pair.confidence} confidence
+                </span>
+                <Button size="sm" variant="primary" onClick={() => linkPair(pair)} disabled={linking}>
+                  Link
+                </Button>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* From Transaction */}
-                <div className="border rounded-lg p-4 bg-red-50">
-                  <h3 className="text-sm font-semibold text-red-900 mb-2">From (Debit)</h3>
-                  <div className="space-y-2">
-                    <div>
-                      <div className="text-sm font-medium text-gray-900">{pair.fromTransaction.name}</div>
-                      <div className="text-xs text-gray-600">{pair.fromTransaction.accountName}</div>
+              {/* Stacked on a phone with an arrow between: side-by-side
+                  panels gave each leg ~160px, not enough for a merchant
+                  name and an account name. */}
+              <div className="space-y-2">
+                <div className="rounded-xl bg-red-50 p-3">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-red-900">From</div>
+                  <div className="mt-1 flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-medium">{pair.fromTransaction.name}</div>
+                      <div className="truncate text-xs text-slate-600">
+                        {pair.fromTransaction.accountName} · {formatTransactionDate(pair.fromTransaction.date)}
+                      </div>
                     </div>
-                    <div className="text-xs text-gray-600">
-                      {formatTransactionDate(pair.fromTransaction.date)}
-                    </div>
-                    <div className="text-lg font-bold text-red-600">
+                    <div className="shrink-0 font-bold tabular-nums text-red-600">
                       -{formatCurrency(pair.fromTransaction.amount)}
                     </div>
                   </div>
                 </div>
 
-                {/* To Transaction */}
-                <div className="border rounded-lg p-4 bg-green-50">
-                  <h3 className="text-sm font-semibold text-green-900 mb-2">To (Credit)</h3>
-                  <div className="space-y-2">
-                    <div>
-                      <div className="text-sm font-medium text-gray-900">{pair.toTransaction.name}</div>
-                      <div className="text-xs text-gray-600">{pair.toTransaction.accountName}</div>
+                <div className="text-center text-slate-400">↓</div>
+
+                <div className="rounded-xl bg-emerald-50 p-3">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-emerald-900">To</div>
+                  <div className="mt-1 flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-medium">{pair.toTransaction.name}</div>
+                      <div className="truncate text-xs text-slate-600">
+                        {pair.toTransaction.accountName} · {formatTransactionDate(pair.toTransaction.date)}
+                      </div>
                     </div>
-                    <div className="text-xs text-gray-600">
-                      {formatTransactionDate(pair.toTransaction.date)}
-                    </div>
-                    <div className="text-lg font-bold text-green-600">
+                    <div className="shrink-0 font-bold tabular-nums text-emerald-600">
                       +{formatCurrency(pair.toTransaction.amount)}
                     </div>
                   </div>
                 </div>
               </div>
-            </div>
+            </Card>
           ))}
         </div>
       )}

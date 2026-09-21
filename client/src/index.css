@@ -3,5 +3,28 @@
 @tailwind utilities;
 
 body {
-  @apply bg-slate-50 text-slate-900;
+  @apply bg-slate-50 text-slate-900 antialiased;
+  /* iOS inflates text in portrait unless this is pinned, which broke the
+     two-column stat grids by making labels wrap. */
+  -webkit-text-size-adjust: 100%;
+}
+
+/* Inputs under 16px make iOS Safari zoom the whole page on focus, and it
+   never zooms back out — the page is then stuck wider than the viewport. */
+@media (max-width: 640px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+
+/* Horizontal strips (chips, segmented controls) scroll within themselves and
+   shouldn't advertise it with a scrollbar on desktop. */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }

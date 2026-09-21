@@ -4,6 +4,7 @@ import PlaidLinkButton from "../components/PlaidLinkButton";
 import ReconnectButton from "../components/ReconnectButton";
 import ConfirmDialog from "../components/ConfirmDialog";
 import { useToast } from "../components/ToastProvider";
+import { Button, Card, EmptyState, HeroStat, PageHeader, Sheet, Spinner, Stat, StatGrid } from "../components/ui";
 
 const ACCOUNT_TYPES = [
   { value: "depository", label: "Checking / Savings" },
@@ -12,8 +13,17 @@ const ACCOUNT_TYPES = [
   { value: "loan", label: "Loan" },
 ];
 
-function AddManualAccountForm({ onAdded }: { onAdded: () => void }) {
-  const [open, setOpen] = useState(false);
+const inputClass = "w-full rounded-xl border border-slate-300 px-3 py-3 text-sm";
+
+function AddManualAccountSheet({
+  open,
+  onClose,
+  onAdded,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onAdded: () => void;
+}) {
   const [name, setName] = useState("");
   const [institutionName, setInstitutionName] = useState("");
   const [type, setType] = useState("depository");
@@ -21,17 +31,6 @@ function AddManualAccountForm({ onAdded }: { onAdded: () => void }) {
   const [currentBalance, setCurrentBalance] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  if (!open) {
-    return (
-      <button
-        onClick={() => setOpen(true)}
-        className="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
-      >
-        + Add manual account
-      </button>
-    );
-  }
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -45,11 +44,12 @@ function AddManualAccountForm({ onAdded }: { onAdded: () => void }) {
         subtype: subtype || null,
         currentBalance: currentBalance ? Number(currentBalance) : null,
       });
-      setOpen(false);
       setName("");
       setInstitutionName("");
+      setSubtype("");
       setCurrentBalance("");
       onAdded();
+      onClose();
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -58,57 +58,50 @@ function AddManualAccountForm({ onAdded }: { onAdded: () => void }) {
   };
 
   return (
-    <form onSubmit={submit} className="rounded-md border bg-white p-4 space-y-3 max-w-md">
-      <h3 className="font-medium">Add manual account</h3>
-      <input
-        required
-        placeholder="Account name (e.g. Roth IRA)"
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-        className="w-full rounded border px-3 py-2 text-sm"
-      />
-      <input
-        required
-        placeholder="Institution (e.g. Robinhood)"
-        value={institutionName}
-        onChange={(e) => setInstitutionName(e.target.value)}
-        className="w-full rounded border px-3 py-2 text-sm"
-      />
-      <select value={type} onChange={(e) => setType(e.target.value)} className="w-full rounded border px-3 py-2 text-sm">
-        {ACCOUNT_TYPES.map((t) => (
-          <option key={t.value} value={t.value}>
-            {t.label}
-          </option>
-        ))}
-      </select>
-      <input
-        placeholder="Subtype (e.g. roth ira)"
-        value={subtype}
-        onChange={(e) => setSubtype(e.target.value)}
-        className="w-full rounded border px-3 py-2 text-sm"
-      />
-      <input
-        type="number"
-        step="0.01"
-        placeholder="Current balance"
-        value={currentBalance}
-        onChange={(e) => setCurrentBalance(e.target.value)}
-        className="w-full rounded border px-3 py-2 text-sm"
-      />
-      {error && <p className="text-sm text-red-600">{error}</p>}
-      <div className="flex gap-2">
-        <button
-          type="submit"
-          disabled={busy}
-          className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50"
-        >
+    <Sheet open={open} onClose={onClose} title="Add manual account">
+      <form onSubmit={submit} className="space-y-3">
+        <input
+          required
+          placeholder="Account name (e.g. Roth IRA)"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          className={inputClass}
+        />
+        <input
+          required
+          placeholder="Institution (e.g. Robinhood)"
+          value={institutionName}
+          onChange={(e) => setInstitutionName(e.target.value)}
+          className={inputClass}
+        />
+        <select value={type} onChange={(e) => setType(e.target.value)} className={inputClass}>
+          {ACCOUNT_TYPES.map((t) => (
+            <option key={t.value} value={t.value}>
+              {t.label}
+            </option>
+          ))}
+        </select>
+        <input
+          placeholder="Subtype (optional, e.g. roth ira)"
+          value={subtype}
+          onChange={(e) => setSubtype(e.target.value)}
+          className={inputClass}
+        />
+        <input
+          type="number"
+          inputMode="decimal"
+          step="0.01"
+          placeholder="Current balance"
+          value={currentBalance}
+          onChange={(e) => setCurrentBalance(e.target.value)}
+          className={inputClass}
+        />
+        {error && <p className="text-sm text-red-600">{error}</p>}
+        <Button type="submit" variant="primary" className="w-full" disabled={busy}>
           {busy ? "Adding…" : "Add account"}
-        </button>
-        <button type="button" onClick={() => setOpen(false)} className="px-4 py-2 text-sm text-slate-600">
-          Cancel
-        </button>
-      </div>
-    </form>
+        </Button>
+      </form>
+    </Sheet>
   );
 }
 
@@ -118,7 +111,11 @@ function ArchivedAccounts({ onRestored }: { onRestored: () => void }) {
   const [archived, setArchived] = useState<Account[]>([]);
   const [loaded, setLoaded] = useState(false);
 
-  const load = () => api.getArchivedAccounts().then((accts) => { setArchived(accts); setLoaded(true); });
+  const load = () =>
+    api.getArchivedAccounts().then((accts) => {
+      setArchived(accts);
+      setLoaded(true);
+    });
 
   useEffect(() => {
     if (open && !loaded) load();
@@ -135,45 +132,39 @@ function ArchivedAccounts({ onRestored }: { onRestored: () => void }) {
     }
   };
 
-  if (!open) {
-    return (
-      <button onClick={() => setOpen(true)} className="text-sm text-slate-500 hover:text-slate-700 underline">
+  return (
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        className="min-h-[44px] w-full text-center text-sm text-slate-500 underline"
+      >
         View removed accounts
       </button>
-    );
-  }
-
-  return (
-    <div className="rounded-lg border bg-white overflow-hidden">
-      <div className="bg-slate-100 px-4 py-2 font-medium text-sm flex items-center justify-between">
-        Removed accounts
-        <button onClick={() => setOpen(false)} className="text-xs text-slate-500 hover:text-slate-700">
-          Hide
-        </button>
-      </div>
-      {archived.length === 0 ? (
-        <p className="px-4 py-6 text-sm text-slate-500">Nothing removed. Deleted accounts show up here, with their transaction history kept, until you restore or permanently delete them.</p>
-      ) : (
-        <ul className="divide-y">
-          {archived.map((a) => (
-            <li key={a.id} className="flex items-center justify-between px-4 py-3">
-              <div>
-                <div className="font-medium text-slate-500">{a.name}</div>
-                <div className="text-xs text-slate-400">
-                  {a.institutionName} · removed {a.archivedAt ? formatRelativeTime(a.archivedAt) : ""}
+      <Sheet open={open} onClose={() => setOpen(false)} title="Removed accounts">
+        {archived.length === 0 ? (
+          <p className="py-4 text-sm text-slate-500">
+            Nothing removed. Deleted accounts show up here, with their transaction history kept, until you restore
+            or permanently delete them.
+          </p>
+        ) : (
+          <ul className="divide-y">
+            {archived.map((a) => (
+              <li key={a.id} className="flex items-center justify-between gap-3 py-3">
+                <div className="min-w-0">
+                  <div className="truncate font-medium text-slate-600">{a.name}</div>
+                  <div className="truncate text-xs text-slate-400">
+                    {a.institutionName} · removed {a.archivedAt ? formatRelativeTime(a.archivedAt) : ""}
+                  </div>
                 </div>
-              </div>
-              <button
-                onClick={() => restore(a)}
-                className="text-xs rounded border border-slate-300 px-3 py-1.5 text-slate-700 hover:bg-slate-50"
-              >
-                Restore
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
+                <Button size="sm" onClick={() => restore(a)} className="shrink-0">
+                  Restore
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Sheet>
+    </>
   );
 }
 
@@ -183,7 +174,9 @@ export default function Accounts() {
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Account | null>(null);
   const [pendingRemoval, setPendingRemoval] = useState<Account | null>(null);
+  const [adding, setAdding] = useState(false);
   const [archivedRefreshKey, setArchivedRefreshKey] = useState(0);
 
   const load = () => {
@@ -204,6 +197,18 @@ export default function Accounts() {
       groups[a.institutionName].push(a);
     }
     return groups;
+  }, [accounts]);
+
+  // Credit balances are stored negative, so a plain sum is already net worth.
+  const { assets, liabilities } = useMemo(() => {
+    let assets = 0;
+    let liabilities = 0;
+    for (const a of accounts) {
+      const b = a.currentBalance ?? 0;
+      if (b < 0) liabilities += b;
+      else assets += b;
+    }
+    return { assets, liabilities };
   }, [accounts]);
 
   const syncAll = async () => {
@@ -239,97 +244,153 @@ export default function Accounts() {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <h1 className="text-2xl font-semibold">Accounts</h1>
-        <div className="flex gap-2">
-          <button
-            onClick={syncAll}
-            disabled={syncing}
-            className="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-50"
-          >
+    <div className="space-y-4">
+      <PageHeader
+        title="Accounts"
+        action={
+          <Button size="sm" onClick={syncAll} disabled={syncing}>
             {syncing ? "Syncing…" : "Sync all"}
-          </button>
-          <PlaidLinkButton onLinked={load} />
-        </div>
-      </div>
+          </Button>
+        }
+      />
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
-      {loading && <p className="text-sm text-slate-500">Loading…</p>}
+      <PlaidLinkButton onLinked={load} />
 
-      {!loading && accounts.length === 0 && (
-        <p className="text-sm text-slate-500">
-          No accounts yet. Link a bank via Plaid, or add one manually below (e.g. for accounts you track by hand).
-        </p>
+      {error && <Card className="border-red-200 bg-red-50 text-sm text-red-700">{error}</Card>}
+
+      {loading ? (
+        <Spinner />
+      ) : accounts.length === 0 ? (
+        <EmptyState
+          icon="🏦"
+          title="No accounts yet"
+          hint="Link a bank above, or add one by hand for anything you track yourself."
+        />
+      ) : (
+        <>
+          <HeroStat label="Net worth" value={formatCurrency(assets + liabilities)}>
+            <StatGrid>
+              <div className="mt-3 border-t pt-3">
+                <div className="text-xs text-slate-500">Assets</div>
+                <div className="truncate font-semibold tabular-nums text-emerald-600">{formatCurrency(assets)}</div>
+              </div>
+              <div className="mt-3 border-t pt-3">
+                <div className="text-xs text-slate-500">Liabilities</div>
+                <div className="truncate font-semibold tabular-nums text-red-600">{formatCurrency(liabilities)}</div>
+              </div>
+            </StatGrid>
+          </HeroStat>
+
+          {Object.entries(grouped).map(([institution, accts]) => {
+            const plaidItem = accts.find((a) => a.plaidItem)?.plaidItem;
+            return (
+              <Card key={institution} padded={false} className="overflow-hidden">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b bg-slate-50 px-4 py-2.5">
+                  <span className="text-sm font-semibold">{institution}</span>
+                  {plaidItem &&
+                    (plaidItem.needsReauth ? (
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-amber-700">Login expired</span>
+                        <ReconnectButton
+                          itemId={accts.find((a) => a.plaidItemId)!.plaidItemId!}
+                          onReconnected={() => {
+                            toast.success(`${institution} reconnected`);
+                            load();
+                          }}
+                        />
+                      </div>
+                    ) : (
+                      <span className="text-xs text-slate-500">Synced {formatRelativeTime(plaidItem.lastSyncedAt)}</span>
+                    ))}
+                </div>
+                <ul className="divide-y">
+                  {accts.map((a) => (
+                    <li key={a.id}>
+                      {/* Name and balance were colliding with no gap ("Advantage
+                          Checking$4,820.11") because both sat in an auto-width
+                          flex row. The name now truncates and the balance is
+                          shrink-0, so they can never overlap. */}
+                      <button
+                        onClick={() => setSelected(a)}
+                        className="flex w-full items-center gap-3 px-4 py-3 text-left active:bg-slate-50"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate font-medium">
+                            {a.name} {a.mask && <span className="text-slate-400">••{a.mask}</span>}
+                          </div>
+                          <div className="truncate text-xs capitalize text-slate-500">
+                            {a.subtype || a.type}
+                            {a.isManual && " · manual"}
+                          </div>
+                        </div>
+                        <span
+                          className={`shrink-0 font-semibold tabular-nums ${
+                            (a.currentBalance ?? 0) < 0 ? "text-red-600" : "text-slate-900"
+                          }`}
+                        >
+                          {formatCurrency(a.currentBalance)}
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </Card>
+            );
+          })}
+
+          <StatGrid>
+            <Stat label="Accounts" value={String(accounts.length)} />
+            <Stat label="Institutions" value={String(Object.keys(grouped).length)} />
+          </StatGrid>
+        </>
       )}
 
-      {Object.entries(grouped).map(([institution, accts]) => {
-        const plaidItem = accts.find((a) => a.plaidItem)?.plaidItem;
-        return (
-          <div key={institution} className="rounded-lg border bg-white overflow-hidden">
-            <div className="bg-slate-100 px-4 py-2 flex items-center justify-between gap-3 flex-wrap">
-              <span className="font-medium text-sm">{institution}</span>
-              {plaidItem && (
-                <div className="flex items-center gap-2">
-                  {plaidItem.needsReauth ? (
-                    <>
-                      <span className="text-xs text-amber-700">Login expired — data may be out of date</span>
-                      <ReconnectButton
-                        itemId={accts.find((a) => a.plaidItemId)!.plaidItemId!}
-                        onReconnected={() => {
-                          toast.success(`${institution} reconnected`);
-                          load();
-                        }}
-                      />
-                    </>
-                  ) : (
-                    <span className="text-xs text-slate-500">
-                      Synced {formatRelativeTime(plaidItem.lastSyncedAt)}
-                    </span>
-                  )}
-                </div>
-              )}
-            </div>
-            <ul className="divide-y">
-              {accts.map((a) => (
-                <li key={a.id} className="flex items-center justify-between px-4 py-3">
-                  <div>
-                    <div className="font-medium">
-                      {a.name} {a.mask && <span className="text-slate-400">••{a.mask}</span>}
-                    </div>
-                    <div className="text-xs text-slate-500 capitalize">
-                      {a.subtype || a.type} {a.isManual && "· manual"}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-4">
-                    <span className={`font-semibold ${a.type === "credit" ? "text-red-600" : "text-slate-900"}`}>
-                      {formatCurrency(a.currentBalance)}
-                    </span>
-                    <button
-                      onClick={() => setPendingRemoval(a)}
-                      className="text-xs text-slate-400 hover:text-red-600"
-                    >
-                      Remove
-                    </button>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </div>
-        );
-      })}
-
-      <AddManualAccountForm onAdded={load} />
+      <Button className="w-full" onClick={() => setAdding(true)}>
+        + Add manual account
+      </Button>
 
       <ArchivedAccounts key={archivedRefreshKey} onRestored={load} />
+
+      <AddManualAccountSheet open={adding} onClose={() => setAdding(false)} onAdded={load} />
+
+      {/* "Remove" used to be an 11px text link wedged next to the balance.
+          It lives here now, where it has room and can't be hit by accident. */}
+      <Sheet open={!!selected} onClose={() => setSelected(null)} title={selected?.name ?? ""}>
+        {selected && (
+          <div className="space-y-4">
+            <div className="flex items-baseline justify-between">
+              <span className="text-sm text-slate-500">Balance</span>
+              <span className="text-lg font-semibold tabular-nums">{formatCurrency(selected.currentBalance)}</span>
+            </div>
+            <div className="flex items-baseline justify-between">
+              <span className="text-sm text-slate-500">Type</span>
+              <span className="text-sm capitalize">{selected.subtype || selected.type}</span>
+            </div>
+            <div className="flex items-baseline justify-between">
+              <span className="text-sm text-slate-500">Source</span>
+              <span className="text-sm">{selected.isManual ? "Manual" : "Linked via Plaid"}</span>
+            </div>
+            <Button
+              variant="danger"
+              className="w-full"
+              onClick={() => {
+                setPendingRemoval(selected);
+                setSelected(null);
+              }}
+            >
+              Remove account
+            </Button>
+          </div>
+        )}
+      </Sheet>
 
       {pendingRemoval && (
         <ConfirmDialog
           title={`Remove ${pendingRemoval.name}?`}
           message={
             pendingRemoval.isManual
-              ? "This hides the account. Its transaction history is kept and you can restore it later from \"View removed accounts.\""
-              : "This disconnects the bank login and hides the account. Its transaction history is kept and you can restore it later from \"View removed accounts.\""
+              ? 'This hides the account. Its transaction history is kept and you can restore it later from "View removed accounts."'
+              : 'This disconnects the bank login and hides the account. Its transaction history is kept and you can restore it later from "View removed accounts."'
           }
           confirmLabel="Remove"
           danger

@@ -19,8 +19,10 @@ import {
 import { api, formatCurrency, formatTransactionDate, type IncomeSpendingSummary, type Transaction, type Category } from "../lib/api";
 import TransactionDetailModal from "../components/TransactionDetailModal";
 import { useToast } from "../components/ToastProvider";
+import { Button, Card, HeroStat, PageHeader, SectionTitle, Segmented, Spinner } from "../components/ui";
 
 type DateRange = "month" | "year" | "all-time" | "custom";
+type ChartView = "trend" | "compare" | "net" | "categories";
 
 const COLORS = [
   "#6366f1", "#22c55e", "#f59e0b", "#ef4444", "#06b6d4",
@@ -41,6 +43,7 @@ export default function IncomeSpending() {
   const [selectedYear, setSelectedYear] = useState(() => new Date().getFullYear().toString());
   const [customStart, setCustomStart] = useState("");
   const [customEnd, setCustomEnd] = useState("");
+  const [chartView, setChartView] = useState<ChartView>("trend");
 
   // New state for category expansion and transactions
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
@@ -246,20 +249,13 @@ export default function IncomeSpending() {
     }
   }
 
-  if (loading) {
-    return (
-      <div className="p-8">
-        <h1 className="text-3xl font-bold mb-6">Income & Spending</h1>
-        <p>Loading...</p>
-      </div>
-    );
-  }
+  if (loading) return <Spinner />;
 
   if (error) {
     return (
-      <div className="p-8">
-        <h1 className="text-3xl font-bold mb-6">Income & Spending</h1>
-        <p className="text-red-600">Error: {error}</p>
+      <div>
+        <PageHeader title="Income & Spending" />
+        <Card className="border-red-200 bg-red-50 text-sm text-red-700">{error}</Card>
       </div>
     );
   }
@@ -267,29 +263,27 @@ export default function IncomeSpending() {
   if (!data) return null;
 
   return (
-    <div className="p-8">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold">Income & Spending</h1>
-        <button
-          onClick={cleanupTransfers}
-          disabled={processing}
-          className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center gap-2"
-        >
-          {processing ? "Processing..." : "🔄 Clean Up Transfers"}
-        </button>
-      </div>
+    <div className="space-y-4">
+      <PageHeader
+        title="Income & Spending"
+        action={
+          <Button size="sm" onClick={cleanupTransfers} disabled={processing}>
+            {processing ? "Working…" : "🔄 Clean up"}
+          </Button>
+        }
+      />
 
       {cleanupResult && (
-        <div className="mb-6 bg-green-50 border border-green-200 rounded-lg p-4 relative">
+        <Card className="relative border-emerald-200 bg-emerald-50">
           <button
             onClick={() => setCleanupResult(null)}
-            className="absolute top-3 right-3 text-green-700 hover:text-green-900 text-lg leading-none"
+            className="absolute right-1 top-1 flex h-10 w-10 items-center justify-center text-lg leading-none text-emerald-700"
             aria-label="Dismiss"
           >
             ×
           </button>
-          <h2 className="font-semibold text-green-900 mb-2">✅ Cleanup complete</h2>
-          <ul className="text-sm text-green-800 space-y-1">
+          <h2 className="mb-2 pr-10 font-semibold text-emerald-900">✅ Cleanup complete</h2>
+          <ul className="space-y-1 text-sm text-emerald-800">
             <li>
               Categorized {cleanupResult.categorized} new transaction{cleanupResult.categorized !== 1 ? "s" : ""}
               {cleanupResult.recategorized > 0 && `, fixed ${cleanupResult.recategorized} miscategorized`} (
@@ -300,164 +294,133 @@ export default function IncomeSpending() {
               {cleanupResult.zelleFixed ? `, including ${cleanupResult.zelleFixed} Zelle transfers` : ""}
             </li>
           </ul>
-          <p className="text-xs text-green-700 mt-2">
+          <p className="mt-2 text-xs text-emerald-700">
             Generic "payment thank you" messages are left uncategorized for manual review.
           </p>
+        </Card>
+      )}
+
+      {/* Was a permanent four-item explainer taking most of the first screen.
+          It answers a question you only ask once, so it folds away. */}
+      <details className="rounded-2xl border border-amber-200 bg-amber-50">
+        <summary className="flex min-h-[44px] cursor-pointer items-center px-4 text-sm font-medium text-amber-900">
+          📊 Totals look wrong? Transfers may be double-counted
+        </summary>
+        <div className="px-4 pb-4 text-sm text-amber-800">
+          <p className="mb-2">
+            If inter-account transfers (BofA → Ally) or credit card payments show as both income and expenses, tap
+            "Clean up" above. It will:
+          </p>
+          <ul className="list-inside list-disc space-y-1">
+            <li>Auto-categorize transfer transactions</li>
+            <li>Link matching transactions between your accounts</li>
+            <li>Exclude them from income and spending totals</li>
+          </ul>
+        </div>
+      </details>
+
+      <Segmented
+        options={[
+          { value: "month", label: "Month" },
+          { value: "year", label: "Year" },
+          { value: "all-time", label: "All" },
+          { value: "custom", label: "Custom" },
+        ]}
+        value={dateRange}
+        onChange={(v) => setDateRange(v as typeof dateRange)}
+      />
+
+      {dateRange === "month" && (
+        <select
+          value={selectedMonth}
+          onChange={(e) => setSelectedMonth(e.target.value)}
+          aria-label="Select month"
+          className="w-full rounded-xl border border-slate-300 bg-white px-3 py-3 text-sm"
+        >
+          {getMonthOptions().map((month) => (
+            <option key={month.value} value={month.value}>
+              {month.label}
+            </option>
+          ))}
+        </select>
+      )}
+
+      {dateRange === "year" && (
+        <select
+          value={selectedYear}
+          onChange={(e) => setSelectedYear(e.target.value)}
+          aria-label="Select year"
+          className="w-full rounded-xl border border-slate-300 bg-white px-3 py-3 text-sm"
+        >
+          {getYearOptions().map((year) => (
+            <option key={year} value={year}>
+              {year}
+            </option>
+          ))}
+        </select>
+      )}
+
+      {dateRange === "custom" && (
+        <div className="grid grid-cols-2 gap-2">
+          <label className="text-xs font-medium text-slate-600">
+            Start
+            <input
+              type="date"
+              value={customStart}
+              onChange={(e) => setCustomStart(e.target.value)}
+              className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-3 text-sm"
+            />
+          </label>
+          <label className="text-xs font-medium text-slate-600">
+            End
+            <input
+              type="date"
+              value={customEnd}
+              onChange={(e) => setCustomEnd(e.target.value)}
+              className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-3 text-sm"
+            />
+          </label>
         </div>
       )}
 
-      {/* Info box about transfers */}
-      <div className="mb-6 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-        <h2 className="font-semibold text-yellow-900 mb-2">📊 Getting Accurate Totals</h2>
-        <p className="text-sm text-yellow-800 mb-2">
-          If you see inter-account transfers (like BofA → Ally) or credit card payments showing as both income and
-          expenses, click the "Clean Up Transfers" button above. This will:
-        </p>
-        <ul className="text-sm text-yellow-800 list-disc list-inside space-y-1">
-          <li>Auto-categorize transfer transactions (deposits to Robinhood, credit card payments, etc.)</li>
-          <li>Link matching transactions between your accounts</li>
-          <li>Exclude these from your income/spending totals</li>
-        </ul>
-      </div>
-
-      {/* Date Range Filters */}
-      <div className="mb-6 bg-white p-4 rounded-lg shadow">
-        <div className="flex flex-wrap gap-2 items-center">
-          <label className="font-medium">Time Period:</label>
-          <button
-            onClick={() => setDateRange("month")}
-            className={`px-4 py-2 rounded ${
-              dateRange === "month"
-                ? "bg-indigo-600 text-white"
-                : "bg-gray-200 text-gray-700 hover:bg-gray-300"
-            }`}
-          >
-            Month
-          </button>
-          <button
-            onClick={() => setDateRange("year")}
-            className={`px-4 py-2 rounded ${
-              dateRange === "year"
-                ? "bg-indigo-600 text-white"
-                : "bg-gray-200 text-gray-700 hover:bg-gray-300"
-            }`}
-          >
-            Year
-          </button>
-          <button
-            onClick={() => setDateRange("all-time")}
-            className={`px-4 py-2 rounded ${
-              dateRange === "all-time"
-                ? "bg-indigo-600 text-white"
-                : "bg-gray-200 text-gray-700 hover:bg-gray-300"
-            }`}
-          >
-            All Time
-          </button>
-          <button
-            onClick={() => setDateRange("custom")}
-            className={`px-4 py-2 rounded ${
-              dateRange === "custom"
-                ? "bg-indigo-600 text-white"
-                : "bg-gray-200 text-gray-700 hover:bg-gray-300"
-            }`}
-          >
-            Custom Range
-          </button>
-        </div>
-
-        {/* Month Selector */}
-        {dateRange === "month" && (
-          <div className="mt-4">
-            <label className="block text-sm font-medium mb-1">Select Month</label>
-            <select
-              value={selectedMonth}
-              onChange={(e) => setSelectedMonth(e.target.value)}
-              className="border rounded px-3 py-2 w-64"
-            >
-              {getMonthOptions().map((month) => (
-                <option key={month.value} value={month.value}>
-                  {month.label}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
-
-        {/* Year Selector */}
-        {dateRange === "year" && (
-          <div className="mt-4">
-            <label className="block text-sm font-medium mb-1">Select Year</label>
-            <select
-              value={selectedYear}
-              onChange={(e) => setSelectedYear(e.target.value)}
-              className="border rounded px-3 py-2 w-64"
-            >
-              {getYearOptions().map((year) => (
-                <option key={year} value={year}>
-                  {year}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
-
-        {/* Custom Date Range Picker */}
-        {dateRange === "custom" && (
-          <div className="mt-4 flex gap-4 items-center">
-            <div>
-              <label className="block text-sm font-medium mb-1">Start Date</label>
-              <input
-                type="date"
-                value={customStart}
-                onChange={(e) => setCustomStart(e.target.value)}
-                className="border rounded px-3 py-2"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">End Date</label>
-              <input
-                type="date"
-                value={customEnd}
-                onChange={(e) => setCustomEnd(e.target.value)}
-                className="border rounded px-3 py-2"
-              />
+      <HeroStat
+        label="Net income"
+        value={formatCurrency(data.netIncome)}
+        tone={data.netIncome >= 0 ? "positive" : "negative"}
+      >
+        <div className="mt-3 flex gap-4 border-t pt-3 text-sm">
+          <div className="min-w-0 flex-1">
+            <div className="text-xs text-slate-500">Income</div>
+            <div className="truncate font-semibold tabular-nums text-emerald-600">
+              {formatCurrency(data.totalIncome)}
             </div>
           </div>
-        )}
-      </div>
+          <div className="min-w-0 flex-1">
+            <div className="text-xs text-slate-500">Expenses</div>
+            <div className="truncate font-semibold tabular-nums text-red-600">
+              {formatCurrency(data.totalExpenses)}
+            </div>
+          </div>
+        </div>
+      </HeroStat>
 
-      {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-        <div className="bg-green-50 p-6 rounded-lg shadow">
-          <h2 className="text-sm font-medium text-green-800 mb-2">Total Income</h2>
-          <p className="text-3xl font-bold text-green-900">{formatCurrency(data.totalIncome)}</p>
-        </div>
-        <div className="bg-red-50 p-6 rounded-lg shadow">
-          <h2 className="text-sm font-medium text-red-800 mb-2">Total Expenses</h2>
-          <p className="text-3xl font-bold text-red-900">{formatCurrency(data.totalExpenses)}</p>
-        </div>
-        <div className={`p-6 rounded-lg shadow ${data.netIncome >= 0 ? "bg-blue-50" : "bg-orange-50"}`}>
-          <h2
-            className={`text-sm font-medium mb-2 ${data.netIncome >= 0 ? "text-blue-800" : "text-orange-800"}`}
-          >
-            Net Income
-          </h2>
-          <p
-            className={`text-3xl font-bold ${data.netIncome >= 0 ? "text-blue-900" : "text-orange-900"}`}
-          >
-            {formatCurrency(data.netIncome)}
-          </p>
-        </div>
-      </div>
-
-      {/* Charts Section */}
+      {/* One chart at a time. Four stacked 300px charts is 1,200px of
+          scrolling on a phone, and you can only look at one anyway. */}
       {data.byMonth && data.byMonth.length > 1 && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-          {/* Spending Trends Chart */}
-          <div className="bg-white p-6 rounded-lg shadow">
-            <h2 className="text-xl font-bold mb-4">Spending Trends</h2>
-            <ResponsiveContainer width="100%" height={300}>
+        <Card>
+          <Segmented
+            className="mb-3"
+            options={[
+              { value: "trend", label: "Trend" },
+              { value: "compare", label: "Compare" },
+              { value: "net", label: "Net" },
+              { value: "categories", label: "Top" },
+            ]}
+            value={chartView}
+            onChange={setChartView}
+          />
+          {chartView === "trend" && (
+            <ResponsiveContainer width="100%" height={240}>
               <AreaChart data={data.byMonth}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis
@@ -494,12 +457,10 @@ export default function IncomeSpending() {
                 />
               </AreaChart>
             </ResponsiveContainer>
-          </div>
+          )}
 
-          {/* Income vs Expenses Bar Chart */}
-          <div className="bg-white p-6 rounded-lg shadow">
-            <h2 className="text-xl font-bold mb-4">Income vs Expenses</h2>
-            <ResponsiveContainer width="100%" height={300}>
+          {chartView === "compare" && (
+            <ResponsiveContainer width="100%" height={240}>
               <BarChart data={data.byMonth}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis
@@ -521,12 +482,10 @@ export default function IncomeSpending() {
                 <Bar dataKey="expenses" fill="#ef4444" name="Expenses" />
               </BarChart>
             </ResponsiveContainer>
-          </div>
+          )}
 
-          {/* Net Income Trend */}
-          <div className="bg-white p-6 rounded-lg shadow">
-            <h2 className="text-xl font-bold mb-4">Net Income Trend</h2>
-            <ResponsiveContainer width="100%" height={300}>
+          {chartView === "net" && (
+            <ResponsiveContainer width="100%" height={240}>
               <LineChart data={data.byMonth}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis
@@ -554,24 +513,20 @@ export default function IncomeSpending() {
                 />
               </LineChart>
             </ResponsiveContainer>
-          </div>
+          )}
 
-          {/* Category Breakdown Pie Charts */}
-          <div className="bg-white p-6 rounded-lg shadow">
-            <h2 className="text-xl font-bold mb-4">Top Spending Categories</h2>
-            {data.expensesByCategory.length > 0 ? (
-              <ResponsiveContainer width="100%" height={300}>
+          {chartView === "categories" &&
+            (data.expensesByCategory.length > 0 ? (
+              <ResponsiveContainer width="100%" height={240}>
                 <PieChart>
                   <Pie
-                    data={data.expensesByCategory
-                      .filter((cat) => cat.name !== "Transfer")
-                      .slice(0, 8)}
+                    data={data.expensesByCategory.filter((cat) => cat.name !== "Transfer").slice(0, 8)}
                     dataKey="total"
                     nameKey="name"
                     cx="50%"
                     cy="50%"
-                    outerRadius={100}
-                    label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                    innerRadius={50}
+                    outerRadius={85}
                   >
                     {data.expensesByCategory
                       .filter((cat) => cat.name !== "Transfer")
@@ -580,148 +535,102 @@ export default function IncomeSpending() {
                         <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                       ))}
                   </Pie>
+                  {/* Slice labels overlapped illegibly at phone width; the
+                      legend below carries the names instead. */}
+                  <Legend verticalAlign="bottom" iconSize={8} />
                   <Tooltip formatter={(value: number) => formatCurrency(value)} />
                 </PieChart>
               </ResponsiveContainer>
             ) : (
-              <p className="text-gray-500 text-center py-20">No expense data available</p>
-            )}
-          </div>
-        </div>
+              <p className="py-16 text-center text-sm text-slate-500">No expense data available</p>
+            ))}
+        </Card>
       )}
 
-      {/* Month-over-Month Comparison */}
+      {/* Three gradient cards, each with its own heading, repeated numbers
+          already shown above — about 450px of phone screen to say "up or
+          down since last month". One row per metric says the same thing. */}
       {data.byMonth && data.byMonth.length >= 2 && (
-        <div className="bg-white p-6 rounded-lg shadow mb-6">
-          <h2 className="text-xl font-bold mb-4">Month-over-Month Comparison</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {(() => {
-              const currentMonth = data.byMonth[data.byMonth.length - 1];
-              const previousMonth = data.byMonth[data.byMonth.length - 2];
-
-              const incomeChange = currentMonth.income - previousMonth.income;
-              const expensesChange = currentMonth.expenses - previousMonth.expenses;
-              const netChange = currentMonth.net - previousMonth.net;
-
-              const incomeChangePercent = previousMonth.income !== 0
-                ? ((incomeChange / Math.abs(previousMonth.income)) * 100)
-                : 0;
-              const expensesChangePercent = previousMonth.expenses !== 0
-                ? ((expensesChange / previousMonth.expenses) * 100)
-                : 0;
-              const netChangePercent = previousMonth.net !== 0
-                ? ((netChange / Math.abs(previousMonth.net)) * 100)
-                : 0;
-
-              const ChangeIndicator = ({ value, percent }: { value: number; percent: number }) => {
-                const isPositive = value > 0;
-                const isIncome = false; // Will be passed as prop
-                return (
-                  <div className="flex items-center gap-1 text-sm">
-                    <span className={isPositive ? "text-green-600" : "text-red-600"}>
-                      {isPositive ? "↑" : "↓"} {formatCurrency(Math.abs(value))}
-                    </span>
-                    <span className="text-gray-500">
-                      ({Math.abs(percent).toFixed(1)}%)
-                    </span>
-                  </div>
-                );
-              };
-
-              return (
-                <>
-                  <div className="bg-gradient-to-br from-green-50 to-green-100 p-4 rounded-lg border border-green-200">
-                    <div className="text-sm text-green-800 font-medium mb-1">Income Change</div>
-                    <div className="text-2xl font-bold text-green-900 mb-2">
-                      {formatCurrency(currentMonth.income)}
-                    </div>
-                    <div className="text-xs text-green-700 mb-1">
-                      vs {formatMonth(previousMonth.month)}: {formatCurrency(previousMonth.income)}
-                    </div>
-                    <div className={`flex items-center gap-1 text-sm ${incomeChange < 0 ? "text-red-600" : "text-green-600"}`}>
-                      <span>{incomeChange < 0 ? "↓" : "↑"} {formatCurrency(Math.abs(incomeChange))}</span>
-                      <span className="text-gray-600">({Math.abs(incomeChangePercent).toFixed(1)}%)</span>
-                    </div>
-                  </div>
-
-                  <div className="bg-gradient-to-br from-red-50 to-red-100 p-4 rounded-lg border border-red-200">
-                    <div className="text-sm text-red-800 font-medium mb-1">Expenses Change</div>
-                    <div className="text-2xl font-bold text-red-900 mb-2">
-                      {formatCurrency(currentMonth.expenses)}
-                    </div>
-                    <div className="text-xs text-red-700 mb-1">
-                      vs {formatMonth(previousMonth.month)}: {formatCurrency(previousMonth.expenses)}
-                    </div>
-                    <div className={`flex items-center gap-1 text-sm ${expensesChange > 0 ? "text-red-600" : "text-green-600"}`}>
-                      <span>{expensesChange > 0 ? "↑" : "↓"} {formatCurrency(Math.abs(expensesChange))}</span>
-                      <span className="text-gray-600">({Math.abs(expensesChangePercent).toFixed(1)}%)</span>
-                    </div>
-                  </div>
-
-                  <div className="bg-gradient-to-br from-blue-50 to-blue-100 p-4 rounded-lg border border-blue-200">
-                    <div className="text-sm text-blue-800 font-medium mb-1">Net Income Change</div>
-                    <div className="text-2xl font-bold text-blue-900 mb-2">
-                      {formatCurrency(currentMonth.net)}
-                    </div>
-                    <div className="text-xs text-blue-700 mb-1">
-                      vs {formatMonth(previousMonth.month)}: {formatCurrency(previousMonth.net)}
-                    </div>
-                    <div className={`flex items-center gap-1 text-sm ${netChange < 0 ? "text-red-600" : "text-green-600"}`}>
-                      <span>{netChange < 0 ? "↓" : "↑"} {formatCurrency(Math.abs(netChange))}</span>
-                      <span className="text-gray-600">({Math.abs(netChangePercent).toFixed(1)}%)</span>
-                    </div>
-                  </div>
-                </>
-              );
-            })()}
-          </div>
-        </div>
+        <Card>
+          {(() => {
+            const cur = data.byMonth[data.byMonth.length - 1];
+            const prev = data.byMonth[data.byMonth.length - 2];
+            const rows = [
+              { label: "Income", now: cur.income, was: prev.income, upIsGood: true },
+              { label: "Expenses", now: cur.expenses, was: prev.expenses, upIsGood: false },
+              { label: "Net", now: cur.net, was: prev.net, upIsGood: true },
+            ];
+            return (
+              <>
+                <SectionTitle>vs {formatMonth(prev.month)}</SectionTitle>
+                <div className="divide-y">
+                  {rows.map((r) => {
+                    const change = r.now - r.was;
+                    const pct = r.was !== 0 ? (change / Math.abs(r.was)) * 100 : 0;
+                    const good = change === 0 ? null : r.upIsGood ? change > 0 : change < 0;
+                    return (
+                      <div key={r.label} className="flex items-center justify-between gap-3 py-2.5">
+                        <span className="text-sm text-slate-600">{r.label}</span>
+                        <div className="flex items-baseline gap-2">
+                          <span className="font-semibold tabular-nums">{formatCurrency(r.now)}</span>
+                          <span
+                            className={`text-xs tabular-nums ${
+                              good === null ? "text-slate-400" : good ? "text-emerald-600" : "text-red-600"
+                            }`}
+                          >
+                            {change >= 0 ? "↑" : "↓"} {Math.abs(pct).toFixed(0)}%
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            );
+          })()}
+        </Card>
       )}
 
-      {/* Month-by-Month Breakdown */}
       {data.byMonth && data.byMonth.length > 0 && (
-        <div className="bg-white p-4 sm:p-6 rounded-lg shadow mb-6">
-          <h2 className="text-xl font-bold mb-4">Month-by-Month Breakdown</h2>
+        <Card>
+          <SectionTitle>Month by month</SectionTitle>
           {/*
             Not a <table>: with four columns, a table on a phone either
             overflows or hides columns behind a scroll with no indication
             anything's cut off (Expenses/Net disappeared entirely in
             testing). This wraps naturally at any width instead.
           */}
-          <div className="divide-y divide-gray-200">
+          <div className="divide-y">
             {data.byMonth.map((month) => (
-              <div key={month.month} className="py-3 flex flex-wrap items-center justify-between gap-x-6 gap-y-1">
-                <span className="text-sm font-medium text-gray-900 min-w-[7rem]">{formatMonth(month.month)}</span>
-                <div className="flex flex-wrap gap-x-5 gap-y-1 text-sm">
-                  <span className="text-green-600">
-                    <span className="text-gray-400 text-xs mr-1">Income</span>
+              <div key={month.month} className="flex flex-wrap items-center justify-between gap-x-6 gap-y-1 py-3">
+                <span className="min-w-[7rem] text-sm font-medium">{formatMonth(month.month)}</span>
+                <div className="flex flex-wrap gap-x-5 gap-y-1 text-sm tabular-nums">
+                  <span className="text-emerald-600">
+                    <span className="mr-1 text-xs text-slate-400">In</span>
                     {formatCurrency(month.income)}
                   </span>
                   <span className="text-red-600">
-                    <span className="text-gray-400 text-xs mr-1">Expenses</span>
+                    <span className="mr-1 text-xs text-slate-400">Out</span>
                     {formatCurrency(month.expenses)}
                   </span>
-                  <span className={`font-medium ${month.net >= 0 ? "text-blue-600" : "text-orange-600"}`}>
-                    <span className="text-gray-400 text-xs mr-1 font-normal">Net</span>
+                  <span className={`font-medium ${month.net >= 0 ? "text-indigo-600" : "text-orange-600"}`}>
+                    <span className="mr-1 text-xs font-normal text-slate-400">Net</span>
                     {formatCurrency(month.net)}
                   </span>
                 </div>
               </div>
             ))}
           </div>
-        </div>
+        </Card>
       )}
 
       {/* Income and Expenses by Category */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Income by Category */}
-        <div className="bg-white p-6 rounded-lg shadow">
-          <h2 className="text-xl font-bold mb-4">Income by Category</h2>
-          <p className="text-sm text-gray-500 mb-4">
-            Click on a category to see individual transactions. "Uncategorized" means transactions that haven't been assigned a category yet.
-          </p>
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <Card>
+          <SectionTitle>Income by category</SectionTitle>
+          <p className="mb-3 text-xs text-slate-500">Tap a category to see its transactions.</p>
           {data.incomeByCategory.length === 0 ? (
-            <p className="text-gray-500">No income recorded for this period</p>
+            <p className="py-4 text-sm text-slate-500">No income recorded for this period</p>
           ) : (
             <div className="space-y-2">
               {data.incomeByCategory.filter((cat) => cat.name !== "Transfer").map((cat) => {
@@ -730,25 +639,25 @@ export default function IncomeSpending() {
                 const transactions = categoryTransactions[key] || [];
 
                 return (
-                  <div key={cat.categoryId || "uncategorized"} className="border rounded-lg">
+                  <div key={cat.categoryId || "uncategorized"} className="overflow-hidden rounded-xl border border-slate-200">
                     <button
                       onClick={() => toggleCategory(cat.categoryId, true)}
-                      className="w-full flex justify-between items-center p-3 hover:bg-gray-50 transition-colors"
+                      className="flex min-h-[48px] w-full items-center justify-between gap-2 p-3 text-left transition-colors active:bg-slate-50"
                     >
-                      <div className="flex items-center gap-2">
-                        <span className="text-gray-400">{isExpanded ? "▼" : "▶"}</span>
-                        <div>
-                          <span className="text-gray-700 font-medium">{cat.name}</span>
+                      <div className="flex min-w-0 items-center gap-2">
+                        <span className="shrink-0 text-slate-400">{isExpanded ? "▾" : "▸"}</span>
+                        <div className="min-w-0 truncate">
+                          <span className="font-medium">{cat.name}</span>
                           {isExpanded && transactions.length > 0 && (
                             <span className="ml-2 text-xs text-gray-500">({transactions.length} transactions)</span>
                           )}
                         </div>
                       </div>
-                      <span className="font-medium text-green-600">{formatCurrency(cat.total)}</span>
+                      <span className="shrink-0 font-medium tabular-nums text-emerald-600">{formatCurrency(cat.total)}</span>
                     </button>
 
                     {isExpanded && (
-                      <div className="border-t bg-gray-50">
+                      <div className="border-t bg-slate-50">
                         {transactions.length === 0 ? (
                           <p className="p-4 text-sm text-gray-500">Loading transactions...</p>
                         ) : (
@@ -757,40 +666,44 @@ export default function IncomeSpending() {
                               {transactions.map((tx) => (
                                 <div
                                   key={tx.id}
-                                  className="p-3 flex items-center justify-between gap-4 hover:bg-gray-100 cursor-pointer transition-colors"
+                                  className="cursor-pointer p-3 transition-colors active:bg-slate-100"
                                   onClick={() => setSelectedTransaction(tx)}
                                 >
-                                  <div className="flex-1 min-w-0">
-                                    <div className="text-sm font-medium text-gray-900 truncate">{tx.name}</div>
-                                    <div className="text-xs text-gray-500">
-                                      {formatTransactionDate(tx.date)} · {tx.account.name}
+                                  {/* Name, date, category picker and amount in
+                                      one row left no usable width for any of
+                                      them on a phone. The picker gets its own
+                                      line underneath. */}
+                                  <div className="flex items-start justify-between gap-3">
+                                    <div className="min-w-0 flex-1">
+                                      <div className="truncate text-sm font-medium">{tx.name}</div>
+                                      <div className="truncate text-xs text-slate-500">
+                                        {formatTransactionDate(tx.date)} · {tx.account.name}
+                                      </div>
                                     </div>
-                                  </div>
-                                  <div className="flex items-center gap-3">
-                                    <select
-                                      value={tx.categoryId ?? ""}
-                                      onChange={(e) => {
-                                        e.stopPropagation();
-                                        updateTransactionCategory(tx.id, e.target.value || null, key);
-                                      }}
-                                      className="text-xs border rounded px-2 py-1"
-                                      onClick={(e) => e.stopPropagation()}
-                                    >
-                                      <option value="">Uncategorized</option>
-                                      {allCategories.map((c) => (
-                                        <option key={c.id} value={c.id}>
-                                          {c.name}
-                                        </option>
-                                      ))}
-                                    </select>
-                                    <span className="text-sm font-medium text-green-600 whitespace-nowrap">
+                                    <span className="shrink-0 text-sm font-medium tabular-nums text-emerald-600">
                                       {formatCurrency(Math.abs(tx.amount))}
                                     </span>
                                   </div>
+                                  <select
+                                    value={tx.categoryId ?? ""}
+                                    onChange={(e) => {
+                                      e.stopPropagation();
+                                      updateTransactionCategory(tx.id, e.target.value || null, key);
+                                    }}
+                                    className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-xs"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    <option value="">Uncategorized</option>
+                                    {allCategories.map((c) => (
+                                      <option key={c.id} value={c.id}>
+                                        {c.name}
+                                      </option>
+                                    ))}
+                                  </select>
                                 </div>
                               ))}
                             </div>
-                            <div className="p-3 border-t bg-gray-100 text-xs text-gray-600 flex justify-between">
+                            <div className="flex justify-between border-t bg-slate-100 p-3 text-xs text-slate-600">
                               <span>Showing {transactions.length} transaction{transactions.length !== 1 ? "s" : ""}</span>
                               <span>
                                 Sum: {formatCurrency(transactions.reduce((sum, tx) => sum + Math.abs(tx.amount), 0))}
@@ -805,16 +718,13 @@ export default function IncomeSpending() {
               })}
             </div>
           )}
-        </div>
+        </Card>
 
-        {/* Expenses by Category */}
-        <div className="bg-white p-6 rounded-lg shadow">
-          <h2 className="text-xl font-bold mb-4">Expenses by Category</h2>
-          <p className="text-sm text-gray-500 mb-4">
-            Click on a category to see individual transactions. "Uncategorized" means transactions that haven't been assigned a category yet.
-          </p>
+        <Card>
+          <SectionTitle>Spending by category</SectionTitle>
+          <p className="mb-3 text-xs text-slate-500">Tap a category to see its transactions.</p>
           {data.expensesByCategory.length === 0 ? (
-            <p className="text-gray-500">No expenses recorded for this period</p>
+            <p className="py-4 text-sm text-slate-500">No expenses recorded for this period</p>
           ) : (
             <div className="space-y-2">
               {data.expensesByCategory.filter((cat) => cat.name !== "Transfer").map((cat) => {
@@ -823,25 +733,25 @@ export default function IncomeSpending() {
                 const transactions = categoryTransactions[key] || [];
 
                 return (
-                  <div key={cat.categoryId || "uncategorized"} className="border rounded-lg">
+                  <div key={cat.categoryId || "uncategorized"} className="overflow-hidden rounded-xl border border-slate-200">
                     <button
                       onClick={() => toggleCategory(cat.categoryId, false)}
-                      className="w-full flex justify-between items-center p-3 hover:bg-gray-50 transition-colors"
+                      className="flex min-h-[48px] w-full items-center justify-between gap-2 p-3 text-left transition-colors active:bg-slate-50"
                     >
-                      <div className="flex items-center gap-2">
-                        <span className="text-gray-400">{isExpanded ? "▼" : "▶"}</span>
-                        <div>
-                          <span className="text-gray-700 font-medium">{cat.name}</span>
+                      <div className="flex min-w-0 items-center gap-2">
+                        <span className="shrink-0 text-slate-400">{isExpanded ? "▾" : "▸"}</span>
+                        <div className="min-w-0 truncate">
+                          <span className="font-medium">{cat.name}</span>
                           {isExpanded && transactions.length > 0 && (
                             <span className="ml-2 text-xs text-gray-500">({transactions.length} transactions)</span>
                           )}
                         </div>
                       </div>
-                      <span className="font-medium text-red-600">{formatCurrency(cat.total)}</span>
+                      <span className="shrink-0 font-medium tabular-nums text-red-600">{formatCurrency(cat.total)}</span>
                     </button>
 
                     {isExpanded && (
-                      <div className="border-t bg-gray-50">
+                      <div className="border-t bg-slate-50">
                         {transactions.length === 0 ? (
                           <p className="p-4 text-sm text-gray-500">Loading transactions...</p>
                         ) : (
@@ -850,40 +760,40 @@ export default function IncomeSpending() {
                               {transactions.map((tx) => (
                                 <div
                                   key={tx.id}
-                                  className="p-3 flex items-center justify-between gap-4 hover:bg-gray-100 cursor-pointer transition-colors"
+                                  className="cursor-pointer p-3 transition-colors active:bg-slate-100"
                                   onClick={() => setSelectedTransaction(tx)}
                                 >
-                                  <div className="flex-1 min-w-0">
-                                    <div className="text-sm font-medium text-gray-900 truncate">{tx.name}</div>
-                                    <div className="text-xs text-gray-500">
-                                      {formatTransactionDate(tx.date)} · {tx.account.name}
+                                  <div className="flex items-start justify-between gap-3">
+                                    <div className="min-w-0 flex-1">
+                                      <div className="truncate text-sm font-medium">{tx.name}</div>
+                                      <div className="truncate text-xs text-slate-500">
+                                        {formatTransactionDate(tx.date)} · {tx.account.name}
+                                      </div>
                                     </div>
-                                  </div>
-                                  <div className="flex items-center gap-3">
-                                    <select
-                                      value={tx.categoryId ?? ""}
-                                      onChange={(e) => {
-                                        e.stopPropagation();
-                                        updateTransactionCategory(tx.id, e.target.value || null, key);
-                                      }}
-                                      className="text-xs border rounded px-2 py-1"
-                                      onClick={(e) => e.stopPropagation()}
-                                    >
-                                      <option value="">Uncategorized</option>
-                                      {allCategories.map((c) => (
-                                        <option key={c.id} value={c.id}>
-                                          {c.name}
-                                        </option>
-                                      ))}
-                                    </select>
-                                    <span className="text-sm font-medium text-red-600 whitespace-nowrap">
+                                    <span className="shrink-0 text-sm font-medium tabular-nums text-red-600">
                                       {formatCurrency(tx.amount)}
                                     </span>
                                   </div>
+                                  <select
+                                    value={tx.categoryId ?? ""}
+                                    onChange={(e) => {
+                                      e.stopPropagation();
+                                      updateTransactionCategory(tx.id, e.target.value || null, key);
+                                    }}
+                                    className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-xs"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    <option value="">Uncategorized</option>
+                                    {allCategories.map((c) => (
+                                      <option key={c.id} value={c.id}>
+                                        {c.name}
+                                      </option>
+                                    ))}
+                                  </select>
                                 </div>
                               ))}
                             </div>
-                            <div className="p-3 border-t bg-gray-100 text-xs text-gray-600 flex justify-between">
+                            <div className="flex justify-between border-t bg-slate-100 p-3 text-xs text-slate-600">
                               <span>Showing {transactions.length} transaction{transactions.length !== 1 ? "s" : ""}</span>
                               <span>Sum: {formatCurrency(transactions.reduce((sum, tx) => sum + tx.amount, 0))}</span>
                             </div>
@@ -896,7 +806,7 @@ export default function IncomeSpending() {
               })}
             </div>
           )}
-        </div>
+        </Card>
       </div>
 
       {/* Transaction Detail Modal */}

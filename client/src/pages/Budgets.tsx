@@ -1,7 +1,17 @@
 import { useEffect, useState } from "react";
 import { api, Budget, Category, currentMonth, DashboardSummary, formatCurrency } from "../lib/api";
-
-type AlertLevel = "safe" | "warning" | "danger" | "exceeded";
+import {
+  Button,
+  Card,
+  EmptyState,
+  HeroStat,
+  MonthStepper,
+  PageHeader,
+  Progress,
+  Sheet,
+  Stat,
+  StatGrid,
+} from "../components/ui";
 
 interface BudgetStatus {
   category: Category;
@@ -9,7 +19,7 @@ interface BudgetStatus {
   spent: number;
   remaining: number;
   percentage: number;
-  alertLevel: AlertLevel;
+  over: boolean;
 }
 
 export default function Budgets() {
@@ -17,16 +27,15 @@ export default function Budgets() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
-  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  // The category currently open in the edit sheet, plus the in-progress value.
+  const [editing, setEditing] = useState<Category | null>(null);
+  const [draft, setDraft] = useState("");
+  const [picking, setPicking] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   const load = () => {
     api.getCategories().then(setCategories);
-    api.getBudgets(month).then((data) => {
-      setBudgets(data);
-      const d: Record<string, string> = {};
-      for (const b of data) d[b.categoryId] = String(b.amount);
-      setDrafts(d);
-    });
+    api.getBudgets(month).then(setBudgets);
     api.getDashboardSummary(month).then(setSummary);
   };
 
@@ -35,262 +44,231 @@ export default function Budgets() {
   const spentFor = (categoryId: string) =>
     summary?.spendingByCategory.find((s) => s.categoryId === categoryId)?.total || 0;
 
-  const save = async (categoryId: string) => {
-    const raw = drafts[categoryId];
-    if (raw === undefined || raw === "") return;
+  const budgetFor = (categoryId: string) => budgets.find((b) => b.categoryId === categoryId);
 
-    const amount = Number(raw);
-    if (Number.isNaN(amount) || amount < 0) return;
-
-    // Skip the write (and the refetches it triggers) when blurring a field that
-    // wasn't changed. Compares against the saved budget rather than testing
-    // truthiness, because 0 is a real budget — "spend nothing here".
-    const existing = budgets.find((b) => b.categoryId === categoryId);
-    if (existing && existing.amount === amount) return;
-
-    await api.setBudget(categoryId, month, amount);
-    load();
+  const openEditor = (category: Category) => {
+    setEditing(category);
+    setDraft(String(budgetFor(category.id)?.amount ?? ""));
+    setPicking(false);
   };
 
-  function getAlertLevel(percentage: number): AlertLevel {
-    if (percentage >= 100) return "exceeded";
-    if (percentage >= 90) return "danger";
-    if (percentage >= 75) return "warning";
-    return "safe";
-  }
-
-  function getProgressBarColor(alertLevel: AlertLevel): string {
-    switch (alertLevel) {
-      case "safe":
-        return "bg-green-500";
-      case "warning":
-        return "bg-yellow-500";
-      case "danger":
-        return "bg-orange-500";
-      case "exceeded":
-        return "bg-red-500";
+  const save = async () => {
+    if (!editing) return;
+    const amount = Number(draft);
+    if (draft === "" || Number.isNaN(amount) || amount < 0) return;
+    setSaving(true);
+    try {
+      await api.setBudget(editing.id, month, amount);
+      load();
+      setEditing(null);
+    } finally {
+      setSaving(false);
     }
-  }
+  };
 
-  function getAlertBadge(alertLevel: AlertLevel, percentage: number): { text: string; color: string } | null {
-    switch (alertLevel) {
-      case "exceeded":
-        return { text: `${percentage.toFixed(0)}% Over Budget!`, color: "bg-red-100 text-red-800 border-red-200" };
-      case "danger":
-        return { text: `${percentage.toFixed(0)}% Used - Critical!`, color: "bg-orange-100 text-orange-800 border-orange-200" };
-      case "warning":
-        return { text: `${percentage.toFixed(0)}% Used`, color: "bg-yellow-100 text-yellow-800 border-yellow-200" };
-      default:
-        return null;
+  const clear = async () => {
+    if (!editing) return;
+    const existing = budgetFor(editing.id);
+    if (!existing) return setEditing(null);
+    setSaving(true);
+    try {
+      await api.deleteBudget(existing.id);
+      load();
+      setEditing(null);
+    } finally {
+      setSaving(false);
     }
-  }
+  };
 
-  function getBudgetStatuses(): BudgetStatus[] {
-    return categories
-      .filter((c) => !c.isIncome && drafts[c.id] && Number(drafts[c.id]) > 0)
-      .map((category) => {
-        const budgeted = Number(drafts[category.id] || 0);
-        const spent = spentFor(category.id);
-        const remaining = budgeted - spent;
-        const percentage = budgeted > 0 ? (spent / budgeted) * 100 : 0;
-        const alertLevel = getAlertLevel(percentage);
+  // Only categories that actually have a budget. Listing all 18 spending
+  // categories inline meant a dozen dead "Set budget" rows and a 5,300px page
+  // on a phone; the unbudgeted ones now live behind "Add a budget".
+  const statuses: BudgetStatus[] = budgets
+    .map((b) => {
+      const category = categories.find((c) => c.id === b.categoryId);
+      if (!category) return null;
+      const spent = spentFor(category.id);
+      const percentage = b.amount > 0 ? (spent / b.amount) * 100 : 0;
+      return {
+        category,
+        budgeted: b.amount,
+        spent,
+        remaining: b.amount - spent,
+        percentage,
+        over: spent > b.amount,
+      };
+    })
+    .filter((s): s is BudgetStatus => s !== null)
+    .sort((a, b) => b.percentage - a.percentage);
 
-        return {
-          category,
-          budgeted,
-          spent,
-          remaining,
-          percentage,
-          alertLevel,
-        };
-      });
-  }
+  const unbudgeted = categories.filter((c) => !c.isIncome && !budgetFor(c.id));
 
-  const budgetStatuses = getBudgetStatuses();
-  const totalBudgeted = budgetStatuses.reduce((sum, b) => sum + b.budgeted, 0);
-  const totalSpent = budgetStatuses.reduce((sum, b) => sum + b.spent, 0);
+  const totalBudgeted = statuses.reduce((s, b) => s + b.budgeted, 0);
+  const totalSpent = statuses.reduce((s, b) => s + b.spent, 0);
   const totalRemaining = totalBudgeted - totalSpent;
-  const overBudgetCount = budgetStatuses.filter((b) => b.alertLevel === "exceeded").length;
-  const warningCount = budgetStatuses.filter((b) => b.alertLevel === "danger" || b.alertLevel === "warning").length;
+  const overCount = statuses.filter((s) => s.over).length;
+  const warnCount = statuses.filter((s) => !s.over && s.percentage >= 75).length;
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Budget Tracker</h1>
-        <input
-          type="month"
-          value={month}
-          onChange={(e) => setMonth(e.target.value)}
-          className="rounded border px-3 py-1.5 text-sm"
+    <div className="space-y-4">
+      <PageHeader
+        title="Budgets"
+        action={
+          <Button variant="primary" size="sm" onClick={() => setPicking(true)}>
+            + Add
+          </Button>
+        }
+      />
+
+      <MonthStepper month={month} onChange={setMonth} />
+
+      {overCount > 0 && (
+        <Card className="border-red-200 bg-red-50">
+          <div className="flex items-start gap-2 text-sm">
+            <span>🚨</span>
+            <p className="text-red-800">
+              <span className="font-medium">
+                {overCount} {overCount === 1 ? "category is" : "categories are"} over budget
+              </span>{" "}
+              this month.
+            </p>
+          </div>
+        </Card>
+      )}
+      {warnCount > 0 && overCount === 0 && (
+        <Card className="border-amber-200 bg-amber-50">
+          <div className="flex items-start gap-2 text-sm">
+            <span>⚠️</span>
+            <p className="text-amber-800">
+              {warnCount} {warnCount === 1 ? "category is" : "categories are"} close to the limit.
+            </p>
+          </div>
+        </Card>
+      )}
+
+      {statuses.length === 0 ? (
+        <EmptyState
+          icon="🎯"
+          title="No budgets set for this month"
+          hint="Pick a category and set a monthly limit. Spending is tracked against it automatically."
         />
-      </div>
+      ) : (
+        <>
+          {/* What's left is the number you check mid-month, so it leads. */}
+          <HeroStat
+            label="Left to spend"
+            value={formatCurrency(totalRemaining)}
+            tone={totalRemaining < 0 ? "negative" : "neutral"}
+          >
+            <div className="mt-3 border-t pt-3">
+              <Progress pct={totalBudgeted > 0 ? (totalSpent / totalBudgeted) * 100 : 0} over={totalSpent > totalBudgeted} />
+              <div className="mt-1.5 flex justify-between text-xs text-slate-500">
+                <span className="tabular-nums">{formatCurrency(totalSpent)} spent</span>
+                <span className="tabular-nums">of {formatCurrency(totalBudgeted)}</span>
+              </div>
+            </div>
+          </HeroStat>
 
-      {/* Alert Notifications */}
-      {overBudgetCount > 0 && (
-        <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded">
-          <div className="flex items-center">
-            <div className="flex-shrink-0">
-              <span className="text-2xl">🚨</span>
-            </div>
-            <div className="ml-3">
-              <h3 className="text-sm font-medium text-red-800">Budget Alert!</h3>
-              <p className="text-sm text-red-700 mt-1">
-                You have {overBudgetCount} {overBudgetCount === 1 ? "category" : "categories"} over budget this month.
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {warningCount > 0 && overBudgetCount === 0 && (
-        <div className="bg-yellow-50 border-l-4 border-yellow-500 p-4 rounded">
-          <div className="flex items-center">
-            <div className="flex-shrink-0">
-              <span className="text-2xl">⚠️</span>
-            </div>
-            <div className="ml-3">
-              <h3 className="text-sm font-medium text-yellow-800">Warning</h3>
-              <p className="text-sm text-yellow-700 mt-1">
-                {warningCount} {warningCount === 1 ? "category is" : "categories are"} approaching the budget limit.
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Summary Cards */}
-      {budgetStatuses.length > 0 && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="bg-white p-6 rounded-lg shadow">
-            <div className="text-sm text-gray-500 mb-1">Total Budgeted</div>
-            <div className="text-3xl font-bold text-indigo-600">{formatCurrency(totalBudgeted)}</div>
-          </div>
-          <div className="bg-white p-6 rounded-lg shadow">
-            <div className="text-sm text-gray-500 mb-1">Total Spent</div>
-            <div className={`text-3xl font-bold ${totalSpent > totalBudgeted ? "text-red-600" : "text-green-600"}`}>
-              {formatCurrency(totalSpent)}
-            </div>
-            <div className="text-xs text-gray-500 mt-1">
-              {totalBudgeted > 0 ? `${((totalSpent / totalBudgeted) * 100).toFixed(0)}% of budget` : ""}
-            </div>
-          </div>
-          <div className="bg-white p-6 rounded-lg shadow">
-            <div className="text-sm text-gray-500 mb-1">Remaining</div>
-            <div className={`text-3xl font-bold ${totalRemaining < 0 ? "text-red-600" : "text-blue-600"}`}>
-              {formatCurrency(totalRemaining)}
-            </div>
-            <div className="text-xs text-gray-500 mt-1">
-              {overBudgetCount > 0 && `${overBudgetCount} over budget`}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Budgets with Progress Bars */}
-      <div className="bg-white rounded-lg shadow overflow-hidden">
-        <div className="p-4 border-b bg-gray-50">
-          <h2 className="font-semibold text-gray-900">Budget Categories</h2>
-          <p className="text-sm text-gray-500 mt-1">Set budgets for each category and track your spending</p>
-        </div>
-
-        <div className="divide-y">
-          {categories
-            .filter((c) => !c.isIncome)
-            .map((c) => {
-              const spent = spentFor(c.id);
-              const budgeted = Number(drafts[c.id] || 0);
-              const remaining = budgeted - spent;
-              const percentage = budgeted > 0 ? (spent / budgeted) * 100 : 0;
-              const alertLevel = getAlertLevel(percentage);
-              const alertBadge = getAlertBadge(alertLevel, percentage);
-              const hasBudget = budgeted > 0;
-
-              return (
-                <div key={c.id} className="p-4 hover:bg-gray-50 transition-colors">
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-3 flex-1">
-                      <span className="font-medium text-gray-900">{c.name}</span>
-                      {alertBadge && (
-                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium border ${alertBadge.color}`}>
-                          {alertBadge.text}
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-4">
-                      <div className="text-right">
-                        <div className="text-sm text-gray-500">Budget</div>
-                        <input
-                          type="number"
-                          step="1"
-                          value={drafts[c.id] ?? ""}
-                          onChange={(e) => setDrafts({ ...drafts, [c.id]: e.target.value })}
-                          onBlur={() => save(c.id)}
-                          className="w-28 rounded border px-2 py-1 text-sm text-right"
-                          placeholder="Set budget"
-                        />
-                      </div>
-                      {hasBudget && (
-                        <>
-                          <div className="text-right">
-                            <div className="text-sm text-gray-500">Spent</div>
-                            <div className="text-sm font-semibold">{formatCurrency(spent)}</div>
-                          </div>
-                          <div className="text-right">
-                            <div className="text-sm text-gray-500">Remaining</div>
-                            <div className={`text-sm font-semibold ${remaining < 0 ? "text-red-600" : "text-green-600"}`}>
-                              {formatCurrency(remaining)}
-                            </div>
-                          </div>
-                        </>
-                      )}
-                      {budgets.find((b) => b.categoryId === c.id) && (
-                        <button
-                          onClick={async () => {
-                            const b = budgets.find((b) => b.categoryId === c.id)!;
-                            await api.deleteBudget(b.id);
-                            load();
-                          }}
-                          className="text-xs text-gray-400 hover:text-red-600 px-2"
-                        >
-                          Clear
-                        </button>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Progress Bar */}
-                  {hasBudget && (
-                    <div className="space-y-1">
-                      <div className="flex justify-between text-xs text-gray-600">
-                        <span>{percentage.toFixed(1)}% used</span>
-                        <span>
-                          {formatCurrency(spent)} / {formatCurrency(budgeted)}
-                        </span>
-                      </div>
-                      <div className="h-3 rounded-full bg-gray-200 overflow-hidden">
-                        <div
-                          className={`h-full transition-all duration-300 ${getProgressBarColor(alertLevel)}`}
-                          style={{ width: `${Math.min(percentage, 100)}%` }}
-                        />
-                      </div>
-                    </div>
-                  )}
+          <div className="space-y-2">
+            {statuses.map((s) => (
+              // The whole row is the tap target — the old layout put a number
+              // input, a Clear link and three right-aligned columns in one
+              // row, which ran off the screen edge on a phone.
+              <button
+                key={s.category.id}
+                onClick={() => openEditor(s.category)}
+                className="block w-full rounded-2xl border border-slate-200 bg-white p-4 text-left active:bg-slate-50"
+              >
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="min-w-0 truncate font-medium">{s.category.name}</span>
+                  <span
+                    className={`shrink-0 text-sm font-semibold tabular-nums ${
+                      s.over ? "text-red-600" : "text-slate-900"
+                    }`}
+                  >
+                    {formatCurrency(Math.abs(s.remaining))}
+                    <span className="ml-1 text-xs font-normal text-slate-400">{s.over ? "over" : "left"}</span>
+                  </span>
                 </div>
-              );
-            })}
-        </div>
-      </div>
+                <div className="mt-2">
+                  <Progress pct={s.percentage} over={s.over} />
+                </div>
+                <div className="mt-1.5 flex justify-between text-xs text-slate-500">
+                  <span className="tabular-nums">
+                    {formatCurrency(s.spent)} of {formatCurrency(s.budgeted)}
+                  </span>
+                  <span className="tabular-nums">{s.percentage.toFixed(0)}%</span>
+                </div>
+              </button>
+            ))}
+          </div>
 
-      {/* Help Text */}
-      {budgetStatuses.length === 0 && (
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 text-center">
-          <p className="text-blue-900 font-medium mb-2">💡 Get Started with Budgets</p>
-          <p className="text-sm text-blue-800">
-            Set a budget amount for each category above. We'll track your spending and alert you when you're
-            approaching or exceeding your limits.
-          </p>
-        </div>
+          <StatGrid>
+            <Stat label="Budgeted" value={formatCurrency(totalBudgeted)} />
+            <Stat
+              label="Spent"
+              value={formatCurrency(totalSpent)}
+              tone={totalSpent > totalBudgeted ? "negative" : "neutral"}
+              hint={totalBudgeted > 0 ? `${((totalSpent / totalBudgeted) * 100).toFixed(0)}% of budget` : undefined}
+            />
+          </StatGrid>
+        </>
       )}
+
+      <Sheet open={picking} onClose={() => setPicking(false)} title="Add a budget">
+        {unbudgeted.length === 0 ? (
+          <p className="py-4 text-center text-sm text-slate-500">Every category already has a budget this month.</p>
+        ) : (
+          <div className="flex flex-col gap-1">
+            {unbudgeted.map((c) => (
+              <button
+                key={c.id}
+                onClick={() => openEditor(c)}
+                className="flex min-h-[48px] items-center justify-between rounded-xl px-3 text-sm font-medium text-slate-700 active:bg-slate-100"
+              >
+                <span className="truncate">{c.name}</span>
+                <span className="shrink-0 text-xs text-slate-400 tabular-nums">
+                  {formatCurrency(spentFor(c.id))} spent
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+      </Sheet>
+
+      <Sheet open={!!editing} onClose={() => setEditing(null)} title={editing?.name ?? ""}>
+        <label className="block text-sm font-medium text-slate-700">Monthly limit</label>
+        <div className="mt-1.5 flex items-center gap-2">
+          <span className="text-lg text-slate-400">$</span>
+          <input
+            type="number"
+            inputMode="decimal"
+            step="1"
+            min="0"
+            autoFocus
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && save()}
+            placeholder="0"
+            className="min-h-[48px] w-full rounded-xl border border-slate-300 px-3 text-lg tabular-nums"
+          />
+        </div>
+        {editing && (
+          <p className="mt-2 text-sm text-slate-500 tabular-nums">
+            {formatCurrency(spentFor(editing.id))} spent in {new Date(`${month}-01T00:00:00Z`).toLocaleDateString("en-US", { month: "long", timeZone: "UTC" })}
+          </p>
+        )}
+        <div className="mt-5 flex gap-2">
+          <Button variant="primary" className="flex-1" onClick={save} disabled={saving || draft === ""}>
+            {saving ? "Saving…" : "Save"}
+          </Button>
+          {editing && budgetFor(editing.id) && (
+            <Button variant="danger" onClick={clear} disabled={saving}>
+              Remove
+            </Button>
+          )}
+        </div>
+      </Sheet>
     </div>
   );
 }

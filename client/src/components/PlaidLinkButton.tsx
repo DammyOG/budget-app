@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { usePlaidLink } from "react-plaid-link";
 import { api } from "../lib/api";
 import { PLAID_LINK_MODE_STORAGE_KEY, PLAID_LINK_TOKEN_STORAGE_KEY } from "../lib/plaidOAuth";
+import { Button } from "./ui";
 
 export default function PlaidLinkButton({ onLinked }: { onLinked: () => void }) {
   const [linkToken, setLinkToken] = useState<string | null>(null);
@@ -53,13 +54,9 @@ export default function PlaidLinkButton({ onLinked }: { onLinked: () => void }) 
 
   return (
     <div>
-      <button
-        onClick={() => open()}
-        disabled={!ready || !linkToken || busy}
-        className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50"
-      >
-        {busy ? "Linking…" : "+ Link an account"}
-      </button>
+      <Button variant="primary" className="w-full" onClick={() => open()} disabled={!ready || !linkToken || busy}>
+        {busy ? "Linking…" : "+ Link a bank account"}
+      </Button>
       {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
     </div>
   );

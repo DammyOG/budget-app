@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, formatSignedAmount, formatTransactionDate, Transaction, Category } from "../lib/api";
 import { useToast } from "../components/ToastProvider";
+import { Button, EmptyState, PageHeader, Spinner, StatRow } from "../components/ui";
 
 export default function ReviewCategories() {
   const toast = useToast();
@@ -100,231 +101,168 @@ export default function ReviewCategories() {
     }
   }
 
-  if (loading) {
-    return (
-      <div className="p-8">
-        <h1 className="text-3xl font-bold mb-6">Review & Train Categorization</h1>
-        <p>Loading transactions...</p>
-      </div>
-    );
-  }
+  if (loading) return <Spinner label="Loading transactions…" />;
 
   if (transactions.length === 0) {
     return (
-      <div className="p-8">
-        <h1 className="text-3xl font-bold mb-6">Review & Train Categorization</h1>
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-8 text-center">
-          <p className="text-blue-900 font-medium mb-2">No Transactions to Review</p>
-          <p className="text-sm text-blue-800">
-            Link a bank account and sync transactions to start training the categorization system.
-          </p>
-        </div>
+      <div>
+        <PageHeader title="Review" />
+        <EmptyState
+          icon="📭"
+          title="Nothing to review"
+          hint="Link a bank account and sync transactions to start training the categorizer."
+        />
       </div>
     );
   }
 
   if (!currentTransaction) {
     return (
-      <div className="p-8">
-        <h1 className="text-3xl font-bold mb-6">Review & Train Categorization</h1>
-        <div className="bg-green-50 border border-green-200 rounded-lg p-8 text-center">
-          <p className="text-green-900 font-medium mb-2">🎉 All Done!</p>
-          <p className="text-sm text-green-800">
-            You've reviewed all transactions.
-          </p>
-        </div>
+      <div>
+        <PageHeader title="Review" />
+        <EmptyState icon="🎉" title="All done!" hint="You've reviewed every transaction." />
       </div>
     );
   }
 
   return (
-    <div className="p-8 max-w-4xl mx-auto">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold mb-2">Review & Train Categorization</h1>
-        <p className="text-gray-600">
-          Help improve categorization accuracy by reviewing transactions one by one
-        </p>
-      </div>
+    <div className="mx-auto max-w-2xl space-y-4">
+      <PageHeader title="Review" subtitle="Confirm or correct one transaction at a time" />
 
-      {/* Progress */}
-      <div className="mb-6">
-        <div className="flex justify-between text-sm text-gray-600 mb-2">
+      <div>
+        <div className="mb-1.5 flex justify-between text-xs text-slate-500">
           <span>
-            Transaction {currentIndex + 1} of {transactions.length}
+            {currentIndex + 1} of {transactions.length}
           </span>
           <span>{progress.toFixed(0)}% complete</span>
         </div>
-        <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
-          <div
-            className="h-full bg-indigo-600 transition-all duration-300"
-            style={{ width: `${progress}%` }}
-          />
+        <div className="h-2 overflow-hidden rounded-full bg-slate-200">
+          <div className="h-full bg-indigo-600 transition-all duration-300" style={{ width: `${progress}%` }} />
         </div>
       </div>
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-3 gap-4 mb-6">
-        <div className="bg-white p-4 rounded-lg border">
-          <div className="text-sm text-gray-500">Reviewed</div>
-          <div className="text-2xl font-bold text-indigo-600">{stats.reviewed}</div>
-        </div>
-        <div className="bg-white p-4 rounded-lg border">
-          <div className="text-sm text-gray-500">Corrected</div>
-          <div className="text-2xl font-bold text-orange-600">{stats.corrected}</div>
-        </div>
-        <div className="bg-white p-4 rounded-lg border">
-          <div className="text-sm text-gray-500">Remaining</div>
-          <div className="text-2xl font-bold text-gray-600">{transactions.length - currentIndex}</div>
-        </div>
-      </div>
+      <StatRow
+        items={[
+          { label: "Reviewed", value: String(stats.reviewed) },
+          { label: "Corrected", value: String(stats.corrected) },
+          { label: "Left", value: String(transactions.length - currentIndex) },
+        ]}
+      />
 
       {/* Transaction Card */}
-      <div className="bg-white rounded-lg shadow-lg border-2 border-gray-200 overflow-hidden">
-        {/* Header */}
-        <div className="bg-gradient-to-r from-indigo-50 to-purple-50 p-6 border-b">
-          <div className="flex items-start justify-between">
-            <div className="flex-1">
-              <h2 className="text-2xl font-bold text-gray-900 mb-1">
-                {currentTransaction.name}
-              </h2>
-              {currentTransaction.merchantName && currentTransaction.merchantName !== currentTransaction.name && (
-                <p className="text-sm text-gray-600">
-                  Merchant: {currentTransaction.merchantName}
-                </p>
-              )}
-            </div>
-            <div className="text-right">
-              <div
-                className={`text-3xl font-bold ${
-                  currentTransaction.kind === "transfer"
-                    ? "text-gray-500"
-                    : currentTransaction.amount > 0
-                    ? "text-red-600"
-                    : "text-green-600"
-                }`}
-              >
-                {formatSignedAmount(currentTransaction.amount)}
-              </div>
-              <div className="text-xs text-gray-500 mt-1">
-                {currentTransaction.kind === "transfer"
-                  ? "Transfer"
-                  : currentTransaction.kind === "income"
-                  ? "Income"
-                  : currentTransaction.amount < 0
-                  ? "Refund"
-                  : "Expense"}
-              </div>
-            </div>
+      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+        {/* Name and a 30px amount side by side left the name about 120px of
+            width on a phone. Stacked, each gets the full line. */}
+        <div className="border-b bg-slate-50 p-4">
+          <h2 className="break-words text-lg font-bold">{currentTransaction.name}</h2>
+          {currentTransaction.merchantName && currentTransaction.merchantName !== currentTransaction.name && (
+            <p className="mt-0.5 text-sm text-slate-500">{currentTransaction.merchantName}</p>
+          )}
+          <div className="mt-2 flex items-baseline gap-2">
+            <span
+              className={`text-2xl font-bold tabular-nums ${
+                currentTransaction.kind === "transfer"
+                  ? "text-slate-500"
+                  : currentTransaction.amount > 0
+                  ? "text-red-600"
+                  : "text-emerald-600"
+              }`}
+            >
+              {formatSignedAmount(currentTransaction.amount)}
+            </span>
+            <span className="text-xs text-slate-500">
+              {currentTransaction.kind === "transfer"
+                ? "Transfer"
+                : currentTransaction.kind === "income"
+                ? "Income"
+                : currentTransaction.amount < 0
+                ? "Refund"
+                : "Expense"}
+            </span>
           </div>
         </div>
 
         {/* Details */}
-        <div className="p-6 space-y-4">
-          <div className="grid grid-cols-2 gap-4 text-sm">
-            <div>
-              <span className="text-gray-500">Date:</span>
-              <span className="ml-2 font-medium text-gray-900">
-                {formatTransactionDate(currentTransaction.date)}
+        <div className="space-y-4 p-4">
+          <div className="flex justify-between gap-3 text-sm">
+            <span className="text-slate-500">Date</span>
+            <span className="font-medium">{formatTransactionDate(currentTransaction.date)}</span>
+          </div>
+          <div className="flex justify-between gap-3 text-sm">
+            <span className="shrink-0 text-slate-500">Account</span>
+            <span className="truncate font-medium">{currentTransaction.account.name}</span>
+          </div>
+
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <div className="mb-1.5 text-xs text-slate-500">Current category</div>
+            {currentTransaction.category ? (
+              <span className="inline-block rounded-lg border border-indigo-200 bg-white px-3 py-1.5 font-semibold text-indigo-900">
+                {currentTransaction.category.name}
               </span>
-            </div>
-            <div>
-              <span className="text-gray-500">Account:</span>
-              <span className="ml-2 font-medium text-gray-900">
-                {currentTransaction.account.name}
+            ) : (
+              <span className="inline-block rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 font-semibold text-amber-800">
+                ⚠️ Uncategorized
               </span>
-            </div>
+            )}
           </div>
 
-          {/* Current Category */}
-          <div className="bg-gray-50 rounded-lg p-4 border-2 border-gray-200">
-            <div className="text-sm text-gray-600 mb-2">Current Category:</div>
-            <div className="flex items-center gap-2">
-              {currentTransaction.category ? (
-                <span className="px-4 py-2 bg-white rounded-lg border-2 border-indigo-200 text-indigo-900 font-semibold text-lg">
-                  {currentTransaction.category.name}
-                </span>
-              ) : (
-                <span className="px-4 py-2 bg-yellow-50 rounded-lg border-2 border-yellow-300 text-yellow-800 font-semibold text-lg">
-                  ⚠️ Uncategorized
-                </span>
-              )}
-            </div>
-          </div>
+          <p className="pt-1 text-center font-semibold">Is this correct?</p>
 
-          {/* Question */}
-          <div className="text-center py-4">
-            <p className="text-xl font-semibold text-gray-900">
-              Is this category correct?
-            </p>
-          </div>
-
-          {/* Action Buttons */}
+          {/* The two answers are the whole job on this page, so they get
+              full-width 52px targets rather than hover-scale desktop buttons. */}
           {!showCustomCategory ? (
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 gap-3">
               <button
                 onClick={handleCorrect}
-                className="py-4 px-6 bg-green-500 hover:bg-green-600 text-white rounded-lg font-semibold text-lg shadow-lg transform transition hover:scale-105"
+                className="min-h-[52px] rounded-xl bg-emerald-600 px-4 font-semibold text-white active:bg-emerald-700"
               >
-                ✓ Yes, Correct
+                ✓ Yes
               </button>
               <button
                 onClick={handleWrong}
-                className="py-4 px-6 bg-red-500 hover:bg-red-600 text-white rounded-lg font-semibold text-lg shadow-lg transform transition hover:scale-105"
+                className="min-h-[52px] rounded-xl bg-red-500 px-4 font-semibold text-white active:bg-red-600"
               >
-                ✗ No, Wrong
+                ✗ No
               </button>
             </div>
           ) : (
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Select the correct category:
-                </label>
+            <div className="space-y-3">
+              <label className="block text-sm font-medium text-slate-700">
+                Pick the correct category
                 <select
                   value={selectedCategoryId}
                   onChange={(e) => setSelectedCategoryId(e.target.value)}
-                  className="w-full rounded-lg border-2 border-gray-300 px-4 py-3 text-lg"
+                  className="mt-1.5 w-full rounded-xl border border-slate-300 px-3 py-3"
                   autoFocus
                 >
-                  <option value="">Choose a category...</option>
+                  <option value="">Choose a category…</option>
                   {categories.map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.name}
                     </option>
                   ))}
                 </select>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <button
+              </label>
+              <div className="grid grid-cols-2 gap-3">
+                <Button
                   onClick={() => {
                     setShowCustomCategory(false);
                     setSelectedCategoryId("");
                   }}
-                  className="py-3 px-6 bg-gray-300 hover:bg-gray-400 text-gray-800 rounded-lg font-semibold"
                 >
                   Cancel
-                </button>
-                <button
-                  onClick={submitCorrection}
-                  disabled={!selectedCategoryId || processing}
-                  className="py-3 px-6 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {processing ? "Saving..." : "Save & Continue"}
-                </button>
+                </Button>
+                <Button variant="primary" onClick={submitCorrection} disabled={!selectedCategoryId || processing}>
+                  {processing ? "Saving…" : "Save"}
+                </Button>
               </div>
             </div>
           )}
 
-          {/* Skip Button */}
           {!showCustomCategory && (
-            <div className="text-center">
-              <button
-                onClick={skip}
-                className="text-sm text-gray-500 hover:text-gray-700 underline"
-              >
-                Skip this transaction
-              </button>
-            </div>
+            <button onClick={skip} className="min-h-[44px] w-full text-center text-sm text-slate-500 underline">
+              Skip this transaction
+            </button>
           )}
         </div>
       </div>

@@ -7,6 +7,7 @@ import {
   type RecurringTransaction,
   type RecurringStats,
 } from "../lib/api";
+import { Button, Card, EmptyState, HeroStat, PageHeader, Spinner, StatRow } from "../components/ui";
 
 export default function Recurring() {
   const [recurring, setRecurring] = useState<RecurringTransaction[]>([]);
@@ -81,84 +82,60 @@ export default function Recurring() {
     return Math.ceil((next.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
   }
 
-  if (loading) {
-    return (
-      <div className="p-8">
-        <h1 className="text-3xl font-bold mb-6">Recurring Transactions</h1>
-        <p>Loading...</p>
-      </div>
-    );
-  }
+  if (loading) return <Spinner />;
 
   if (error) {
     return (
-      <div className="p-8">
-        <h1 className="text-3xl font-bold mb-6">Recurring Transactions</h1>
-        <p className="text-red-600">Error: {error}</p>
+      <div>
+        <PageHeader title="Recurring" />
+        <Card className="border-red-200 bg-red-50 text-sm text-red-700">{error}</Card>
       </div>
     );
   }
 
   return (
-    <div className="p-8">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold">Recurring Transactions & Subscriptions</h1>
-        <button
-          onClick={loadData}
-          className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700"
-        >
-          🔄 Refresh
-        </button>
-      </div>
+    <div className="space-y-4">
+      <PageHeader
+        title="Recurring"
+        subtitle="Subscriptions and bills found in your history"
+        action={
+          <Button size="sm" onClick={loadData}>
+            🔄
+          </Button>
+        }
+      />
 
-      {/* Info box */}
-      <div className="mb-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
-        <h2 className="font-semibold text-blue-900 mb-2">📊 How It Works</h2>
-        <p className="text-sm text-blue-800">
-          This page automatically detects recurring transactions like subscriptions, bills, and regular expenses
-          by analyzing patterns in your transaction history. We look for transactions with the same name that occur
-          at regular intervals (weekly, monthly, etc.).
-        </p>
-      </div>
-
-      {/* Stats Cards */}
       {stats && (
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-          <div className="bg-white p-6 rounded-lg shadow">
-            <div className="text-sm text-gray-500 mb-1">Total Recurring</div>
-            <div className="text-3xl font-bold text-indigo-600">{stats.total}</div>
-            <div className="text-xs text-gray-500 mt-1">transactions detected</div>
-          </div>
-          <div className="bg-white p-6 rounded-lg shadow">
-            <div className="text-sm text-gray-500 mb-1">Monthly Subscriptions</div>
-            <div className="text-3xl font-bold text-green-600">{stats.monthlySubscriptions}</div>
-            <div className="text-xs text-gray-500 mt-1">monthly recurring items</div>
-          </div>
-          <div className="bg-white p-6 rounded-lg shadow">
-            <div className="text-sm text-gray-500 mb-1">Monthly Total</div>
-            <div className="text-2xl font-bold text-red-600">
-              {formatCurrency(stats.totalMonthlyExpenses)}
-            </div>
-            <div className="text-xs text-gray-500 mt-1">monthly subscriptions</div>
-          </div>
-          <div className="bg-white p-6 rounded-lg shadow">
-            <div className="text-sm text-gray-500 mb-1">All Recurring (Monthly Equiv.)</div>
-            <div className="text-2xl font-bold text-orange-600">
-              {formatCurrency(stats.totalRecurringMonthlyEquivalent)}
-            </div>
-            <div className="text-xs text-gray-500 mt-1">all frequencies combined</div>
-          </div>
-        </div>
+        <>
+          <HeroStat label="Monthly recurring cost" value={formatCurrency(stats.totalRecurringMonthlyEquivalent)}>
+            <p className="mt-1 text-xs text-slate-400">All frequencies converted to a monthly equivalent</p>
+          </HeroStat>
+          <StatRow
+            items={[
+              { label: "Detected", value: String(stats.total) },
+              { label: "Monthly", value: String(stats.monthlySubscriptions) },
+              { label: "Subs cost", value: formatCurrency(stats.totalMonthlyExpenses), tone: "negative" },
+            ]}
+          />
+        </>
       )}
 
-      {/* Recurring Transactions List */}
+      <details className="rounded-2xl border border-blue-200 bg-blue-50">
+        <summary className="flex min-h-[44px] cursor-pointer items-center px-4 text-sm font-medium text-blue-900">
+          📊 How this is detected
+        </summary>
+        <p className="px-4 pb-4 text-sm text-blue-800">
+          Transactions with the same name that occur at regular intervals (weekly, monthly, and so on) are grouped
+          automatically. It takes at least three instances before a pattern is recognized.
+        </p>
+      </details>
+
       {recurring.length === 0 ? (
-        <div className="bg-white p-12 rounded-lg shadow text-center">
-          <p className="text-gray-500 text-lg">
-            No recurring transactions detected yet. You need at least 3 instances of the same transaction
-            at regular intervals for it to be detected as recurring.
-          </p>
-        </div>
+        <EmptyState
+          icon="🔁"
+          title="Nothing recurring yet"
+          hint="It takes at least 3 instances of the same transaction at regular intervals before a pattern shows up here."
+        />
       ) : (
         <div className="space-y-3">
           {recurring.map((item) => {
@@ -169,55 +146,52 @@ export default function Recurring() {
             return (
               <div
                 key={item.name}
-                className={`bg-white rounded-lg shadow ${upcoming ? "ring-2 ring-yellow-400" : ""}`}
+                className={`overflow-hidden rounded-2xl border bg-white ${
+                  upcoming ? "border-amber-300 ring-1 ring-amber-300" : "border-slate-200"
+                }`}
               >
+                {/* Name, a due badge, five metadata chips and a two-line
+                    amount column all on one row left every chip clipped at
+                    phone width. Name and amount now own the first row; the
+                    details wrap onto the second. */}
                 <button
                   onClick={() => toggleExpand(item.name)}
-                  className="w-full p-4 flex items-center justify-between hover:bg-gray-50 transition-colors rounded-lg"
+                  className="w-full p-4 text-left transition-colors active:bg-slate-50"
                 >
-                  <div className="flex items-center gap-4 flex-1">
-                    <span className="text-gray-400">{isExpanded ? "▼" : "▶"}</span>
-                    <div className="text-left flex-1">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="font-medium text-gray-900">{item.name}</span>
-                        {upcoming && (
-                          <span className="px-2 py-0.5 bg-yellow-100 text-yellow-800 text-xs rounded-full font-medium">
-                            Due {daysUntil === 0 ? "today" : daysUntil === 1 ? "tomorrow" : `in ${daysUntil} days`}
-                          </span>
-                        )}
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex min-w-0 flex-1 items-center gap-2">
+                      <span className="shrink-0 text-slate-400">{isExpanded ? "▾" : "▸"}</span>
+                      <span className="truncate font-medium">{item.name}</span>
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <div
+                        className={`font-semibold tabular-nums ${
+                          item.averageAmount > 0 ? "text-red-600" : "text-emerald-600"
+                        }`}
+                      >
+                        {formatCurrency(item.averageAmount)}
                       </div>
-                      <div className="flex items-center gap-3 text-sm text-gray-500">
-                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${getFrequencyColor(item.frequency)}`}>
-                          {getFrequencyLabel(item.frequency)}
-                        </span>
-                        {item.categoryName && (
-                          <span className="text-xs">
-                            📁 {item.categoryName}
-                          </span>
-                        )}
-                        <span className="text-xs">
-                          {item.count} occurrences
-                        </span>
-                        <span className="text-xs">
-                          Last: {formatTransactionDate(item.lastDate)}
-                        </span>
-                        <span className="text-xs">
-                          Next: {formatTransactionDate(item.nextExpectedDate)}
-                        </span>
-                      </div>
+                      <div className="text-[11px] text-slate-400">avg</div>
                     </div>
                   </div>
-                  <div className="text-right">
-                    <div className={`text-lg font-semibold ${item.averageAmount > 0 ? "text-red-600" : "text-green-600"}`}>
-                      {formatCurrency(item.averageAmount)}
-                    </div>
-                    <div className="text-xs text-gray-500">avg per occurrence</div>
+                  <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 pl-6 text-xs text-slate-500">
+                    <span className={`rounded-full px-2 py-0.5 font-medium ${getFrequencyColor(item.frequency)}`}>
+                      {getFrequencyLabel(item.frequency)}
+                    </span>
+                    {upcoming && (
+                      <span className="rounded-full bg-amber-100 px-2 py-0.5 font-medium text-amber-800">
+                        Due {daysUntil === 0 ? "today" : daysUntil === 1 ? "tomorrow" : `in ${daysUntil}d`}
+                      </span>
+                    )}
+                    {item.categoryName && <span className="truncate">📁 {item.categoryName}</span>}
+                    <span>{item.count}×</span>
+                    <span>Next {formatTransactionDate(item.nextExpectedDate)}</span>
                   </div>
                 </button>
 
                 {isExpanded && (
-                  <div className="border-t bg-gray-50 p-4">
-                    <h3 className="font-medium text-gray-700 mb-3">Transaction History ({item.count} total)</h3>
+                  <div className="border-t bg-slate-50 p-4">
+                    <h3 className="mb-3 text-sm font-medium text-slate-700">History ({item.count})</h3>
                     <div className="space-y-2">
                       {item.transactions.map((tx) => (
                         <div
@@ -245,22 +219,22 @@ export default function Recurring() {
                     </div>
 
                     {/* Summary */}
-                    <div className="mt-4 pt-4 border-t grid grid-cols-3 gap-4 text-sm">
-                      <div>
-                        <div className="text-gray-500">Total Spent</div>
-                        <div className="font-semibold text-gray-900">
+                    <div className="mt-4 grid grid-cols-3 gap-2 border-t pt-4 text-sm">
+                      <div className="min-w-0">
+                        <div className="truncate text-xs text-slate-500">Total</div>
+                        <div className="truncate font-semibold tabular-nums">
                           {formatCurrency(item.transactions.reduce((sum, tx) => sum + tx.amount, 0))}
                         </div>
                       </div>
-                      <div>
-                        <div className="text-gray-500">Average Amount</div>
-                        <div className="font-semibold text-gray-900">
+                      <div className="min-w-0">
+                        <div className="truncate text-xs text-slate-500">Average</div>
+                        <div className="truncate font-semibold tabular-nums">
                           {formatCurrency(item.averageAmount)}
                         </div>
                       </div>
-                      <div>
-                        <div className="text-gray-500">Monthly Equivalent</div>
-                        <div className="font-semibold text-gray-900">
+                      <div className="min-w-0">
+                        <div className="truncate text-xs text-slate-500">Per month</div>
+                        <div className="truncate font-semibold tabular-nums">
                           {formatCurrency(
                             item.frequency === "weekly"
                               ? item.averageAmount * 4.33

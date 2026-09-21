@@ -14,6 +14,7 @@ import {
 } from "../lib/api";
 import TransactionDetailModal from "../components/TransactionDetailModal";
 import { useToast } from "../components/ToastProvider";
+import { PageHeader } from "../components/ui";
 
 const PAGE_SIZE = 100;
 
@@ -136,7 +137,7 @@ function FilterSheet({
       >
         <div className="p-4 border-b flex items-center justify-between sticky top-0 bg-white">
           <h2 className="font-semibold text-lg">Filters</h2>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-2xl leading-none">
+          <button onClick={onClose} className="-mr-2 flex h-11 w-11 items-center justify-center rounded-lg text-xl leading-none text-slate-400 active:bg-slate-100">
             ×
           </button>
         </div>
@@ -147,7 +148,7 @@ function FilterSheet({
             <select
               value={draft.accountId}
               onChange={(e) => setDraft({ ...draft, accountId: e.target.value })}
-              className="w-full rounded border px-3 py-2 text-sm"
+              className="min-h-[44px] w-full rounded-xl border border-slate-300 px-3 text-sm"
             >
               <option value="">All accounts</option>
               {accounts.map((a) => (
@@ -163,7 +164,7 @@ function FilterSheet({
             <select
               value={draft.kind}
               onChange={(e) => setDraft({ ...draft, kind: e.target.value as TransactionKind | "" })}
-              className="w-full rounded border px-3 py-2 text-sm"
+              className="min-h-[44px] w-full rounded-xl border border-slate-300 px-3 text-sm"
             >
               <option value="">All types</option>
               {(Object.keys(KIND_LABELS) as TransactionKind[]).map((k) => (
@@ -179,7 +180,7 @@ function FilterSheet({
             <select
               value={draft.categoryId}
               onChange={(e) => setDraft({ ...draft, categoryId: e.target.value })}
-              className="w-full rounded border px-3 py-2 text-sm"
+              className="min-h-[44px] w-full rounded-xl border border-slate-300 px-3 text-sm"
             >
               <option value="">All categories</option>
               <option value="uncategorized">Uncategorized</option>
@@ -198,14 +199,14 @@ function FilterSheet({
                 type="date"
                 value={draft.startDate}
                 onChange={(e) => setDraft({ ...draft, startDate: e.target.value })}
-                className="w-full rounded border px-2 py-2 text-sm"
+                className="min-h-[44px] w-full rounded-xl border border-slate-300 px-2 text-sm"
               />
               <span className="text-slate-400 text-sm">to</span>
               <input
                 type="date"
                 value={draft.endDate}
                 onChange={(e) => setDraft({ ...draft, endDate: e.target.value })}
-                className="w-full rounded border px-2 py-2 text-sm"
+                className="min-h-[44px] w-full rounded-xl border border-slate-300 px-2 text-sm"
               />
             </div>
           </div>
@@ -218,7 +219,7 @@ function FilterSheet({
                 placeholder="Min"
                 value={draft.minAmount}
                 onChange={(e) => setDraft({ ...draft, minAmount: e.target.value })}
-                className="w-full rounded border px-2 py-2 text-sm"
+                className="min-h-[44px] w-full rounded-xl border border-slate-300 px-2 text-sm"
               />
               <span className="text-slate-400 text-sm">to</span>
               <input
@@ -226,7 +227,7 @@ function FilterSheet({
                 placeholder="Max"
                 value={draft.maxAmount}
                 onChange={(e) => setDraft({ ...draft, maxAmount: e.target.value })}
-                className="w-full rounded border px-2 py-2 text-sm"
+                className="min-h-[44px] w-full rounded-xl border border-slate-300 px-2 text-sm"
               />
             </div>
           </div>
@@ -272,7 +273,7 @@ function FilterSheet({
               setDraft(EMPTY_FILTERS);
               onChange(EMPTY_FILTERS);
             }}
-            className="px-4 py-2 text-sm rounded border border-slate-300 text-slate-700 hover:bg-slate-50"
+            className="min-h-[44px] rounded-xl border border-slate-300 px-4 text-sm font-medium text-slate-700 active:bg-slate-50"
           >
             Clear all
           </button>
@@ -460,43 +461,45 @@ export default function Transactions() {
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Transactions</h1>
-        <div className="relative">
-          <button
-            onClick={() => setShowMaintenance(!showMaintenance)}
-            className="rounded-md border border-slate-300 p-2 text-slate-500 hover:bg-slate-100"
-            title="More actions"
-          >
-            ⋯
-          </button>
-          {showMaintenance && (
-            <div className="absolute right-0 mt-1 w-56 rounded-md border bg-white shadow-lg z-10 text-sm">
-              <button
-                onClick={autoCategorize}
-                disabled={processing}
-                className="w-full text-left px-4 py-2 hover:bg-slate-50 disabled:opacity-50"
-              >
-                {processing ? "Processing…" : "Re-run auto-categorization"}
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
+      <PageHeader
+        title="Transactions"
+        action={
+          <div className="relative">
+            <button
+              onClick={() => setShowMaintenance(!showMaintenance)}
+              className="flex h-11 w-11 items-center justify-center rounded-xl border border-slate-300 text-slate-500 active:bg-slate-100"
+              aria-label="More actions"
+            >
+              ⋯
+            </button>
+            {showMaintenance && (
+              <div className="absolute right-0 z-10 mt-1 w-56 rounded-xl border bg-white text-sm shadow-lg">
+                <button
+                  onClick={autoCategorize}
+                  disabled={processing}
+                  className="min-h-[48px] w-full px-4 text-left active:bg-slate-50 disabled:opacity-50"
+                >
+                  {processing ? "Processing…" : "Re-run auto-categorization"}
+                </button>
+              </div>
+            )}
+          </div>
+        }
+      />
 
       <div className="flex gap-2">
         <input
           placeholder="Search transactions…"
           value={searchInput}
           onChange={(e) => setSearchInput(e.target.value)}
-          className="flex-1 rounded border px-3 py-2 text-sm"
+          className="min-h-[44px] flex-1 rounded-xl border border-slate-300 px-3 text-sm"
         />
         <button
           onClick={() => setShowFilterSheet(true)}
-          className={`rounded border px-4 py-2 text-sm whitespace-nowrap ${
+          className={`min-h-[44px] whitespace-nowrap rounded-xl border px-4 text-sm font-medium ${
             activeFilterCount > 0
               ? "border-indigo-300 bg-indigo-50 text-indigo-700"
-              : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+              : "border-slate-300 bg-white text-slate-700 active:bg-slate-50"
           }`}
         >
           Filters{activeFilterCount > 0 ? ` (${activeFilterCount})` : ""}
@@ -504,11 +507,12 @@ export default function Transactions() {
       </div>
 
       <div className="flex items-center gap-2 text-sm">
-        <span className="text-slate-500">Sort</span>
+        <span className="shrink-0 text-slate-500">Sort</span>
         <select
           value={sort}
           onChange={(e) => setSort(e.target.value as TransactionSort)}
-          className="rounded border px-2 py-1 text-sm"
+          aria-label="Sort by"
+          className="min-h-[40px] rounded-xl border border-slate-300 bg-white px-2 text-sm"
         >
           <option value="date">Date</option>
           <option value="amount">Amount</option>
@@ -516,7 +520,7 @@ export default function Transactions() {
         </select>
         <button
           onClick={() => setDir(dir === "asc" ? "desc" : "asc")}
-          className="rounded border border-slate-300 px-2 py-1 hover:bg-slate-50"
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-300 active:bg-slate-100"
           title={
             dir === "desc"
               ? sort === "date"
@@ -530,9 +534,7 @@ export default function Transactions() {
           {dir === "desc" ? "↓" : "↑"}
         </button>
         {!collapsed && filters.accountId && (
-          <span className="text-xs text-slate-400">
-            Showing both sides of transfers while viewing one account
-          </span>
+          <span className="text-xs text-slate-400">Showing both sides of transfers</span>
         )}
       </div>
 
@@ -547,7 +549,7 @@ export default function Transactions() {
               {attention.uncategorized > 0 && (
                 <button
                   onClick={() => setFilters({ ...EMPTY_FILTERS, categoryId: "uncategorized" })}
-                  className="rounded-full bg-white border border-amber-300 px-3 py-1 text-xs text-amber-900 hover:bg-amber-100"
+                  className="min-h-[40px] rounded-full border border-amber-300 bg-white px-3 text-xs font-medium text-amber-900 active:bg-amber-100"
                 >
                   {attention.uncategorized} uncategorized
                 </button>
@@ -555,7 +557,7 @@ export default function Transactions() {
               {attention.duplicateGroups > 0 && (
                 <button
                   onClick={() => setFilters({ ...EMPTY_FILTERS, duplicatesOnly: true })}
-                  className="rounded-full bg-white border border-amber-300 px-3 py-1 text-xs text-amber-900 hover:bg-amber-100"
+                  className="min-h-[40px] rounded-full border border-amber-300 bg-white px-3 text-xs font-medium text-amber-900 active:bg-amber-100"
                 >
                   {attention.duplicateGroups} possible duplicate
                   {attention.duplicateGroups === 1 ? "" : "s"}
@@ -564,7 +566,7 @@ export default function Transactions() {
               {attention.pending > 0 && (
                 <button
                   onClick={() => setFilters({ ...EMPTY_FILTERS, pendingOnly: true })}
-                  className="rounded-full bg-white border border-amber-300 px-3 py-1 text-xs text-amber-900 hover:bg-amber-100"
+                  className="min-h-[40px] rounded-full border border-amber-300 bg-white px-3 text-xs font-medium text-amber-900 active:bg-amber-100"
                 >
                   {attention.pending} pending
                 </button>
