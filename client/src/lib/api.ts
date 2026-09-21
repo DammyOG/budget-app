@@ -61,6 +61,19 @@ export interface Transaction {
   transferPairId: string | null;
   account: { name: string; institutionName: string };
   category: Category | null;
+  // Derived per-request by the list endpoint, not stored on the row.
+  isDuplicate?: boolean;
+  transferCounterpartAccount?: string | null;
+}
+
+export type TransactionSort = "date" | "amount" | "name";
+export type SortDirection = "asc" | "desc";
+
+export interface AttentionCounts {
+  pending: number;
+  uncategorized: number;
+  duplicateGroups: number;
+  total: number;
 }
 
 export interface Budget {
@@ -162,10 +175,11 @@ export const api = {
 
   getTransactions: (params: Record<string, string> = {}) => {
     const qs = new URLSearchParams(params).toString();
-    return request<{ transactions: Transaction[]; total: number; hasMore: boolean }>(
+    return request<{ transactions: Transaction[]; total: number; hasMore: boolean; collapsed: boolean }>(
       `/transactions${qs ? `?${qs}` : ""}`
     );
   },
+  getAttentionCounts: () => request<AttentionCounts>("/transactions/attention"),
   addManualTransaction: (data: Partial<Transaction>) =>
     request<Transaction>("/transactions/manual", { method: "POST", body: JSON.stringify(data) }),
   updateTransaction: (id: string, data: Partial<Transaction>) =>

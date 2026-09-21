@@ -3,14 +3,57 @@ import { prisma } from "../db";
 import { autoCategorizeAll } from "../services/autoCategorize";
 import { fixPaymentThankYou } from "../services/fixMiscategorized";
 import { kindForCategory } from "../services/transactionKind";
+import {
+  findDuplicateGroups,
+  findDuplicateKeys,
+  duplicateGroupFilter,
+  keyOf,
+  isDuplicate,
+} from "../services/duplicates";
 
 const router = Router();
 
 const VALID_KINDS = new Set(["expense", "income", "transfer"]);
+const VALID_SORTS = new Set(["date", "amount", "name"]);
+
+// Every ordering ends in a unique key. Without one, offset pagination over
+// tied rows can repeat or drop transactions between pages: ties have no
+// defined order, and SQLite is free to return them differently per query.
+// Dates are stored at UTC midnight, so *every* same-day row is a tie.
+function buildOrderBy(sort: string, dir: "asc" | "desc") {
+  switch (sort) {
+    case "amount":
+      // By magnitude, so a $3,000 paycheck and $3,000 rent sort together as
+      // "big" rather than landing at opposite ends of the list.
+      return [{ absAmount: dir }, { date: "desc" as const }, { id: "asc" as const }];
+    case "name":
+      return [{ name: dir }, { date: "desc" as const }, { id: "asc" as const }];
+    case "date":
+    default:
+      // Biggest first within a day: otherwise a $2,000 rent payment and a $4
+      // coffee on the same date come back in arbitrary insertion order.
+      return [{ date: dir }, { absAmount: "desc" as const }, { id: "asc" as const }];
+  }
+}
 
 router.get("/", async (req, res) => {
-  const { accountId, categoryId, kind, search, startDate, endDate, minAmount, maxAmount, pendingOnly, limit, offset } =
-    req.query;
+  const {
+    accountId,
+    categoryId,
+    kind,
+    search,
+    startDate,
+    endDate,
+    minAmount,
+    maxAmount,
+    pendingOnly,
+    duplicatesOnly,
+    collapseTransfers,
+    sort,
+    dir,
+    limit,
+    offset,
+  } = req.query;
 
   const where: any = {};
   if (accountId) where.accountId = String(accountId);
@@ -24,34 +67,56 @@ router.get("/", async (req, res) => {
   }
   // Applied server-side, not just to whatever page happens to be loaded —
   // filtering only the fetched rows would silently miss matches sitting on
-  // a later page the client hasn't asked for yet.
+  // a later page the client hasn't asked for yet. Range is on magnitude
+  // ("at least $50"), which absAmount now expresses directly.
   if (minAmount || maxAmount) {
-    // Filtering is on magnitude ("at least $50"), not signed value, to match
-    // how the UI presents amount range — SQLite has no native ABS() filter
-    // via Prisma, so match both the positive and negative side of the range
-    // explicitly instead. Leaving either bound unset (rather than defaulting
-    // it to 0) would otherwise let it match every amount on the other side
-    // of zero.
-    const min = minAmount ? Number(minAmount) : 0;
-    const max = maxAmount ? Number(maxAmount) : undefined;
-    where.OR = [
-      { amount: { gte: min, ...(max !== undefined ? { lte: max } : {}) } },
-      { amount: { lte: -min, ...(max !== undefined ? { gte: -max } : {}) } },
-    ];
+    where.absAmount = {};
+    if (minAmount) where.absAmount.gte = Number(minAmount);
+    if (maxAmount) where.absAmount.lte = Number(maxAmount);
   }
   if (pendingOnly === "true") where.pending = true;
 
+  // A matched transfer is one movement of money recorded twice, once on each
+  // account; showing both legs makes the ledger read as though it happened
+  // twice. Hide the inflow leg and annotate the surviving outflow with where
+  // the money went.
+  //
+  // Not applied when filtering to one account: there the hidden leg may be
+  // the only row that account has for the movement, and its ledger would look
+  // like money vanished.
+  const collapsing = collapseTransfers !== "false" && !accountId;
+  if (collapsing) {
+    where.NOT = { AND: [{ transferPairId: { not: null } }, { amount: { lt: 0 } }] };
+  }
+
+  const sortField = VALID_SORTS.has(String(sort)) ? String(sort) : "date";
+  const sortDir = dir === "asc" ? "asc" : "desc";
+
   const take = limit ? Number(limit) : 100;
   const skip = offset ? Number(offset) : 0;
+
+  // Duplicate groups are computed over the whole filtered set, not the current
+  // page, so a charge whose twin sits three pages later is still flagged.
+  const duplicateGroups = await findDuplicateGroups(where);
+  const duplicateKeys = new Set(duplicateGroups.map(keyOf));
+
+  // Narrowed in the query rather than by filtering the page, so `total` and
+  // `hasMore` describe what the user is actually looking at.
+  if (duplicatesOnly === "true") {
+    if (duplicateGroups.length === 0) {
+      return res.json({ transactions: [], total: 0, hasMore: false, collapsed: collapsing });
+    }
+    where.OR = duplicateGroupFilter(duplicateGroups);
+  }
 
   // Fetched alongside the page rather than assumed, so the client can tell
   // "you've seen everything" apart from "there's 3,000 more rows past the
   // 500th" — silently capping at a fixed number with no total made older
   // transactions disappear from the list with no indication anything was cut.
-  const [transactions, total] = await Promise.all([
+  const [rows, total] = await Promise.all([
     prisma.transaction.findMany({
       where,
-      orderBy: { date: "desc" },
+      orderBy: buildOrderBy(sortField, sortDir),
       take,
       skip,
       include: { account: { select: { name: true, institutionName: true } }, category: true },
@@ -59,7 +124,32 @@ router.get("/", async (req, res) => {
     prisma.transaction.count({ where }),
   ]);
 
-  res.json({ transactions, total, hasMore: skip + transactions.length < total });
+  // The hidden half of each collapsed pair, so the visible row can say where
+  // the money actually went instead of just "Transfer".
+  const pairIds = rows.map((t) => t.transferPairId).filter((id): id is string => !!id);
+  const counterparts = pairIds.length
+    ? await prisma.transaction.findMany({
+        where: { id: { in: pairIds } },
+        select: { id: true, amount: true, account: { select: { name: true, institutionName: true } } },
+      })
+    : [];
+  const counterpartById = new Map(counterparts.map((c) => [c.id, c]));
+
+  const transactions = rows.map((tx) => {
+    const counterpart = tx.transferPairId ? counterpartById.get(tx.transferPairId) : undefined;
+    return {
+      ...tx,
+      isDuplicate: isDuplicate(tx, duplicateKeys),
+      transferCounterpartAccount: counterpart?.account.name ?? null,
+    };
+  });
+
+  res.json({
+    transactions,
+    total,
+    hasMore: skip + rows.length < total,
+    collapsed: collapsing,
+  });
 });
 
 router.post("/manual", async (req, res) => {
@@ -142,6 +232,28 @@ router.patch("/:id", async (req, res) => {
 router.delete("/:id", async (req, res) => {
   await prisma.transaction.delete({ where: { id: req.params.id } });
   res.json({ success: true });
+});
+
+// What needs a human's attention, as counts rather than a ranked feed.
+// Mixing these into the main list's sort order would mean the list silently
+// reshuffles as you categorize things; a banner with counts and jump-links
+// keeps the ledger stable while still surfacing what's outstanding.
+router.get("/attention", async (req, res) => {
+  const [pending, uncategorized, duplicateKeys] = await Promise.all([
+    prisma.transaction.count({ where: { pending: true } }),
+    // Transfers deliberately excluded: they don't carry a category, so
+    // counting them as "uncategorized" would be a to-do that can't be done.
+    prisma.transaction.count({ where: { categoryId: null, kind: { not: "transfer" } } }),
+    findDuplicateKeys({}),
+  ]);
+
+  // A group of duplicates is one thing to look at, however many rows it spans.
+  res.json({
+    pending,
+    uncategorized,
+    duplicateGroups: duplicateKeys.size,
+    total: pending + uncategorized + duplicateKeys.size,
+  });
 });
 
 router.post("/auto-categorize", async (req, res) => {

@@ -2,6 +2,7 @@ import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import { prisma } from "./db";
+import { catchAsyncErrors, errorHandler } from "./asyncErrors";
 
 import plaidRoutes from "./routes/plaid";
 import accountsRoutes from "./routes/accounts";
@@ -56,14 +57,16 @@ async function main() {
   app.use(express.json());
 
   app.get("/api/health", (req, res) => res.json({ ok: true }));
-  app.use("/api/plaid", plaidRoutes);
-  app.use("/api/accounts", accountsRoutes);
-  app.use("/api/transactions", transactionsRoutes);
-  app.use("/api/categories", categoriesRoutes);
-  app.use("/api/budgets", budgetsRoutes);
-  app.use("/api/dashboard", dashboardRoutes);
-  app.use("/api/transfers", transfersRoutes);
-  app.use("/api/recurring", recurringRoutes);
+  app.use("/api/plaid", catchAsyncErrors(plaidRoutes));
+  app.use("/api/accounts", catchAsyncErrors(accountsRoutes));
+  app.use("/api/transactions", catchAsyncErrors(transactionsRoutes));
+  app.use("/api/categories", catchAsyncErrors(categoriesRoutes));
+  app.use("/api/budgets", catchAsyncErrors(budgetsRoutes));
+  app.use("/api/dashboard", catchAsyncErrors(dashboardRoutes));
+  app.use("/api/transfers", catchAsyncErrors(transfersRoutes));
+  app.use("/api/recurring", catchAsyncErrors(recurringRoutes));
+
+  app.use(errorHandler);
 
   const port = Number(process.env.PORT) || 4000;
   app.listen(port, () => console.log(`Budget app server listening on http://localhost:${port}`));

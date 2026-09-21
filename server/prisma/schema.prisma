@@ -73,6 +73,10 @@ model Transaction {
   accountId           String
   categoryId          String?
   amount              Float    // positive = money out, negative = money in (Plaid convention)
+  // Magnitude of amount, stored because Prisma can't ORDER BY an expression
+  // and sorting "biggest first" has to mean biggest either direction — a
+  // $3,000 paycheck and a $3,000 rent payment are both big.
+  absAmount           Float    @default(0)
   date                DateTime
   name                String
   merchantName        String?
@@ -99,6 +103,9 @@ model Transaction {
   @@index([date])
   @@index([transferPairId])
   @@index([kind])
+  @@index([absAmount])
+  // Duplicate detection groups on exactly these four.
+  @@index([accountId, name, amount, date])
 }
 
 model Budget {

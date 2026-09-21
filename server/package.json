@@ -8,6 +8,7 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
     "verify:money-model": "tsx scripts/verify-money-model.ts",
+    "verify:transaction-list": "tsx scripts/verify-transaction-list.ts",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio"

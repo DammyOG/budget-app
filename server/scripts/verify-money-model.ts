@@ -83,7 +83,9 @@ function check(label: string, actual: any, expected: any) {
     body: JSON.stringify({ transaction1Id: cardPayOut.id, transaction2Id: cardPayIn.id }),
   });
 
-  const { transactions: all } = await api("/transactions?limit=200");
+  // Both legs, since these assertions are about the kind stored on each row.
+  // The default list collapses a matched pair down to the outflow leg.
+  const { transactions: all } = await api("/transactions?limit=200&collapseTransfers=false");
   const t = (name: string) => all.find((x: any) => x.name === name);
 
   console.log("\nTransfer pairing:");

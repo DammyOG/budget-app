@@ -3,11 +3,14 @@ import { useSearchParams } from "react-router-dom";
 import {
   Account,
   api,
+  AttentionCounts,
   Category,
   formatSignedAmount,
   formatTransactionDate,
+  SortDirection,
   Transaction,
   TransactionKind,
+  TransactionSort,
 } from "../lib/api";
 import TransactionDetailModal from "../components/TransactionDetailModal";
 import { useToast } from "../components/ToastProvider";
@@ -23,6 +26,11 @@ interface Filters {
   minAmount: string;
   maxAmount: string;
   pendingOnly: boolean;
+  duplicatesOnly: boolean;
+  // Off by default: a matched transfer is one movement shown once. Turning
+  // this on shows both legs, which is what you want when reconciling against
+  // a single account's statement.
+  showBothTransferLegs: boolean;
 }
 
 const EMPTY_FILTERS: Filters = {
@@ -34,6 +42,8 @@ const EMPTY_FILTERS: Filters = {
   minAmount: "",
   maxAmount: "",
   pendingOnly: false,
+  duplicatesOnly: false,
+  showBothTransferLegs: false,
 };
 
 const KIND_LABELS: Record<TransactionKind, string> = {
@@ -66,17 +76,29 @@ function TransactionRow({ tx, onOpen }: { tx: Transaction; onOpen: () => void })
       className="w-full text-left px-4 py-3 flex items-center justify-between gap-3 hover:bg-slate-50 active:bg-slate-100"
     >
       <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <span className="font-medium text-slate-900 truncate">{tx.name}</span>
           {isTransfer && (
             <span className="shrink-0 rounded-full bg-slate-200 px-2 py-0.5 text-xs text-slate-600">
               ⇄
             </span>
           )}
+          {tx.isDuplicate && (
+            <span
+              className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-800"
+              title="Same merchant, amount, and day as another charge on this account — possible double charge"
+            >
+              possible duplicate
+            </span>
+          )}
           {tx.pending && <span className="shrink-0 text-xs text-amber-600">pending</span>}
         </div>
         <div className="text-sm text-slate-500 truncate">
-          {tx.account?.name}
+          {/* A collapsed transfer shows the route the money took rather than
+              just the account the row happens to live on. */}
+          {isTransfer && tx.transferCounterpartAccount
+            ? `${tx.account?.name} → ${tx.transferCounterpartAccount}`
+            : tx.account?.name}
           {!isTransfer && ` · ${tx.category?.name || "Uncategorized"}`}
         </div>
       </div>
@@ -217,6 +239,31 @@ function FilterSheet({
             />
             Pending only
           </label>
+
+          <label className="flex items-center gap-2 text-sm text-slate-700">
+            <input
+              type="checkbox"
+              checked={draft.duplicatesOnly}
+              onChange={(e) => setDraft({ ...draft, duplicatesOnly: e.target.checked })}
+            />
+            Possible duplicates only
+          </label>
+
+          <label className="flex items-start gap-2 text-sm text-slate-700">
+            <input
+              type="checkbox"
+              className="mt-1"
+              checked={draft.showBothTransferLegs}
+              onChange={(e) => setDraft({ ...draft, showBothTransferLegs: e.target.checked })}
+            />
+            <span>
+              Show both sides of transfers
+              <span className="block text-xs text-slate-500">
+                Off by default — a transfer is one movement of money, shown once. Turn on to reconcile against a
+                statement.
+              </span>
+            </span>
+          </label>
         </div>
 
         <div className="p-4 border-t flex gap-2 sticky bottom-0 bg-white">
@@ -266,6 +313,10 @@ export default function Transactions() {
   const [processing, setProcessing] = useState(false);
   const [showMaintenance, setShowMaintenance] = useState(false);
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
+  const [sort, setSort] = useState<TransactionSort>("date");
+  const [dir, setDir] = useState<SortDirection>("desc");
+  const [attention, setAttention] = useState<AttentionCounts | null>(null);
+  const [collapsed, setCollapsed] = useState(true);
   const [lastCategorized, setLastCategorized] = useState<{
     name: string;
     categoryId: string;
@@ -279,7 +330,12 @@ export default function Transactions() {
   }, [searchInput]);
 
   const buildParams = (offset: number) => {
-    const params: Record<string, string> = { limit: String(PAGE_SIZE), offset: String(offset) };
+    const params: Record<string, string> = {
+      limit: String(PAGE_SIZE),
+      offset: String(offset),
+      sort,
+      dir,
+    };
     if (filters.accountId) params.accountId = filters.accountId;
     if (filters.categoryId) params.categoryId = filters.categoryId;
     if (filters.kind) params.kind = filters.kind;
@@ -288,6 +344,9 @@ export default function Transactions() {
     if (filters.minAmount) params.minAmount = filters.minAmount;
     if (filters.maxAmount) params.maxAmount = filters.maxAmount;
     if (filters.pendingOnly) params.pendingOnly = "true";
+    if (filters.duplicatesOnly) params.duplicatesOnly = "true";
+    if (!filters.showBothTransferLegs) params.collapseTransfers = "true";
+    else params.collapseTransfers = "false";
     if (search) params.search = search;
     return params;
   };
@@ -301,8 +360,10 @@ export default function Transactions() {
         setTransactions(res.transactions);
         setTotal(res.total);
         setHasMore(res.hasMore);
+        setCollapsed(res.collapsed);
       })
       .catch((err) => setError(err.message));
+    api.getAttentionCounts().then(setAttention).catch(() => undefined);
   };
 
   const loadMore = async () => {
@@ -324,16 +385,27 @@ export default function Transactions() {
     api.getCategories().then(setCategories).catch((err) => setError(err.message));
   }, []);
 
-  useEffect(load, [filters, search]);
+  useEffect(load, [filters, search, sort, dir]);
 
+  // Date headers only make sense while the list is in date order. Grouping a
+  // list sorted by amount or name would silently re-sort it back into date
+  // order and throw away the sort the user just picked.
   const groups = useMemo(() => {
+    if (sort !== "date") return null;
     const byDate: Record<string, Transaction[]> = {};
     for (const tx of transactions) {
       const key = tx.date.slice(0, 10);
       (byDate[key] ||= []).push(tx);
     }
-    return Object.entries(byDate).sort(([a], [b]) => b.localeCompare(a));
-  }, [transactions]);
+    // Server already ordered the rows; preserve that order for the headers
+    // rather than re-deriving it, so ascending date sort isn't flipped back.
+    const seen: string[] = [];
+    for (const tx of transactions) {
+      const key = tx.date.slice(0, 10);
+      if (!seen.includes(key)) seen.push(key);
+    }
+    return seen.map((key) => [key, byDate[key]] as [string, Transaction[]]);
+  }, [transactions, sort]);
 
   const activeFilterCount = countActive(filters);
 
@@ -431,6 +503,77 @@ export default function Transactions() {
         </button>
       </div>
 
+      <div className="flex items-center gap-2 text-sm">
+        <span className="text-slate-500">Sort</span>
+        <select
+          value={sort}
+          onChange={(e) => setSort(e.target.value as TransactionSort)}
+          className="rounded border px-2 py-1 text-sm"
+        >
+          <option value="date">Date</option>
+          <option value="amount">Amount</option>
+          <option value="name">Name</option>
+        </select>
+        <button
+          onClick={() => setDir(dir === "asc" ? "desc" : "asc")}
+          className="rounded border border-slate-300 px-2 py-1 hover:bg-slate-50"
+          title={
+            dir === "desc"
+              ? sort === "date"
+                ? "Newest first"
+                : "Largest first"
+              : sort === "date"
+              ? "Oldest first"
+              : "Smallest first"
+          }
+        >
+          {dir === "desc" ? "↓" : "↑"}
+        </button>
+        {!collapsed && filters.accountId && (
+          <span className="text-xs text-slate-400">
+            Showing both sides of transfers while viewing one account
+          </span>
+        )}
+      </div>
+
+      {/* Counts rather than reordering the list: sorting "what needs
+          attention" into the ledger would make it reshuffle under you as you
+          categorize things. */}
+      {attention && attention.total > 0 && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <span className="font-medium text-amber-900">Needs attention</span>
+            <div className="flex gap-2 flex-wrap">
+              {attention.uncategorized > 0 && (
+                <button
+                  onClick={() => setFilters({ ...EMPTY_FILTERS, categoryId: "uncategorized" })}
+                  className="rounded-full bg-white border border-amber-300 px-3 py-1 text-xs text-amber-900 hover:bg-amber-100"
+                >
+                  {attention.uncategorized} uncategorized
+                </button>
+              )}
+              {attention.duplicateGroups > 0 && (
+                <button
+                  onClick={() => setFilters({ ...EMPTY_FILTERS, duplicatesOnly: true })}
+                  className="rounded-full bg-white border border-amber-300 px-3 py-1 text-xs text-amber-900 hover:bg-amber-100"
+                >
+                  {attention.duplicateGroups} possible duplicate
+                  {attention.duplicateGroups === 1 ? "" : "s"}
+                </button>
+              )}
+              {attention.pending > 0 && (
+                <button
+                  onClick={() => setFilters({ ...EMPTY_FILTERS, pendingOnly: true })}
+                  className="rounded-full bg-white border border-amber-300 px-3 py-1 text-xs text-amber-900 hover:bg-amber-100"
+                >
+                  {attention.pending} pending
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {lastCategorized && (
         <div className="rounded-lg border border-indigo-200 bg-indigo-50 p-3 flex items-center justify-between gap-3 text-sm">
           <p className="text-indigo-900">
@@ -454,13 +597,13 @@ export default function Transactions() {
       {error && <p className="text-sm text-red-600">{error}</p>}
 
       <div className="rounded-lg border bg-white overflow-hidden">
-        {groups.length === 0 ? (
+        {transactions.length === 0 ? (
           <p className="px-4 py-10 text-center text-slate-500 text-sm">
             {total === 0 && !search && activeFilterCount === 0
               ? "No transactions yet. Link an account and sync to pull in history."
               : "Nothing matches your search or filters."}
           </p>
-        ) : (
+        ) : groups ? (
           groups.map(([date, rows]) => (
             <div key={date}>
               <div className="sticky top-0 bg-slate-50 px-4 py-1.5 text-xs font-medium text-slate-500 border-b">
@@ -473,6 +616,14 @@ export default function Transactions() {
               </div>
             </div>
           ))
+        ) : (
+          // Sorted by amount or name: a flat list, since date headers would
+          // imply an ordering the list no longer has.
+          <div className="divide-y">
+            {transactions.map((tx) => (
+              <TransactionRow key={tx.id} tx={tx} onOpen={() => setSelectedTransaction(tx)} />
+            ))}
+          </div>
         )}
         {transactions.length > 0 && (
           <div className="px-4 py-3 border-t text-center">
