@@ -2,18 +2,18 @@ import { PrismaClient } from "@prisma/client";
 
 const base = new PrismaClient();
 
-// absAmount is derived from amount, never set by hand. Doing it here rather
+// absAmountCents is derived from amount, never set by hand. Doing it here rather
 // than at each write site means no future code path can forget it and end up
 // with a transaction that sorts as if it were $0 — the same failure mode that
 // made centralizing "kind" worthwhile.
 //
 // Only plain numbers are derived from: Prisma also accepts atomic forms like
-// { amount: { increment: 5 } }, where the resulting value isn't knowable here.
+// { amountCents: { increment: 5 } }, where the resulting value isn't knowable here.
 function deriveAbsAmount<T>(data: T): T {
   if (!data || typeof data !== "object") return data;
-  const amount = (data as { amount?: unknown }).amount;
+  const amount = (data as { amountCents?: unknown }).amountCents;
   if (typeof amount !== "number") return data;
-  return { ...data, absAmount: Math.abs(amount) };
+  return { ...data, absAmountCents: Math.abs(amount) };
 }
 
 export const prisma = base.$extends({

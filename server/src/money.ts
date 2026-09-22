@@ -1,7 +1,14 @@
-// The sign convention, in one place.
+// The money conventions, in one place: unit and sign.
 //
-//   amount < 0  money left the account  (spending, a transfer out)
-//   amount > 0  money arrived           (income, a refund, a transfer in)
+// UNIT — every stored money value is an integer number of cents. Floats can't
+// represent 0.1 exactly, so sums drifted and exact comparisons needed
+// tolerances (transfer matching carried a `< 0.01` guard purely to work around
+// it). Field names end in "Cents" because an Int on its own can't say whether
+// it holds dollars or cents, and TypeScript can't tell the two apart.
+//
+// SIGN —
+//   amountCents < 0  money left the account  (spending, a transfer out)
+//   amountCents > 0  money arrived           (income, a refund, a transfer in)
 //
 // This matches what the app displays — a $50 coffee reads -$50.00 — so there
 // is no flip between what is stored and what is shown.
@@ -36,8 +43,21 @@ export function incomeAmount(amount: number): number {
   return amount;
 }
 
-// Plaid's sign, inverted to this codebase's convention. Called exactly once,
-// where transactions enter the system.
-export function fromPlaidAmount(plaidAmount: number): number {
-  return -plaidAmount;
+// Plaid's amount, converted to this codebase's unit and sign in one step:
+// dollars to cents, and money-out from positive to negative. Called where
+// transactions and balances enter the system, and nowhere else.
+export function fromPlaidAmount(plaidDollars: number): number {
+  return -Math.round(plaidDollars * 100);
+}
+
+// --- unit conversion, only at the edges ---
+
+// Plaid reports dollars as a float. Rounding at the boundary is what keeps
+// every later calculation exact.
+export function dollarsToCents(dollars: number): number {
+  return Math.round(dollars * 100);
+}
+
+export function centsToDollars(cents: number): number {
+  return cents / 100;
 }

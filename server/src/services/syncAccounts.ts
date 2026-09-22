@@ -22,15 +22,15 @@ export async function syncAccountsForItem(plaidItemDbId: string) {
         type: acct.type,
         subtype: acct.subtype ?? null,
         mask: acct.mask ?? null,
-        currentBalance: acct.balances.current ?? null,
-        availableBalance: acct.balances.available ?? null,
+        currentBalanceCents: acct.balances.current ?? null,
+        availableBalanceCents: acct.balances.available ?? null,
         isoCurrencyCode: acct.balances.iso_currency_code ?? "USD",
       },
       update: {
         name: acct.name,
         officialName: acct.official_name ?? null,
-        currentBalance: acct.balances.current ?? null,
-        availableBalance: acct.balances.available ?? null,
+        currentBalanceCents: acct.balances.current ?? null,
+        availableBalanceCents: acct.balances.available ?? null,
       },
     });
   }

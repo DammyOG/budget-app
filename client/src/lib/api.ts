@@ -21,8 +21,8 @@ export interface Account {
   type: string;
   subtype: string | null;
   mask: string | null;
-  currentBalance: number | null;
-  availableBalance: number | null;
+  currentBalanceCents: number | null;
+  availableBalanceCents: number | null;
   isoCurrencyCode: string | null;
   isManual: boolean;
   archivedAt: string | null;
@@ -49,7 +49,7 @@ export interface Transaction {
   id: string;
   accountId: string;
   categoryId: string | null;
-  amount: number;
+  amountCents: number;
   date: string;
   name: string;
   merchantName: string | null;
@@ -101,7 +101,7 @@ export interface Budget {
   id: string;
   categoryId: string;
   month: string;
-  amount: number;
+  amountCents: number;
   category: Category;
 }
 
@@ -152,7 +152,7 @@ export interface IncomeSpendingSummary {
 export interface UnmatchedFlow {
   id: string;
   name: string;
-  amount: number;
+  amountCents: number;
   date: string;
   accountId: string;
   accountName: string;
@@ -160,8 +160,8 @@ export interface UnmatchedFlow {
 }
 
 export interface LinkedPair {
-  outgoing: { id: string; name: string; amount: number; date: string; accountName: string } | null;
-  incoming: { id: string; name: string; amount: number; date: string; accountName: string } | null;
+  outgoing: { id: string; name: string; amountCents: number; date: string; accountName: string } | null;
+  incoming: { id: string; name: string; amountCents: number; date: string; accountName: string } | null;
   // A leg whose counterpart is gone: excluded from spending but with nothing
   // to collapse against, so it needs unlinking.
   broken: boolean;
@@ -171,14 +171,14 @@ export interface TransferPair {
   fromTransaction: {
     id: string;
     name: string;
-    amount: number;
+    amountCents: number;
     date: Date;
     accountName: string;
   };
   toTransaction: {
     id: string;
     name: string;
-    amount: number;
+    amountCents: number;
     date: Date;
     accountName: string;
   };
@@ -198,7 +198,7 @@ export interface RecurringTransaction {
   nextExpectedDate: string;
   transactions: {
     id: string;
-    amount: number;
+    amountCents: number;
     date: string;
     accountName: string;
   }[];
@@ -274,8 +274,8 @@ export const api = {
   deleteCategory: (id: string) => request(`/categories/${id}`, { method: "DELETE" }),
 
   getBudgets: (month: string) => request<Budget[]>(`/budgets?month=${month}`),
-  setBudget: (categoryId: string, month: string, amount: number) =>
-    request<Budget>("/budgets", { method: "PUT", body: JSON.stringify({ categoryId, month, amount }) }),
+  setBudget: (categoryId: string, month: string, amountCents: number) =>
+    request<Budget>("/budgets", { method: "PUT", body: JSON.stringify({ categoryId, month, amountCents }) }),
   deleteBudget: (id: string) => request(`/budgets/${id}`, { method: "DELETE" }),
 
   getDashboardSummary: (month: string) => request<DashboardSummary>(`/dashboard/summary?month=${month}`),
@@ -303,9 +303,22 @@ export const api = {
   getRecurringStats: () => request<RecurringStats>("/recurring/stats"),
 };
 
-export function formatCurrency(value: number | null | undefined): string {
-  if (value == null) return "—";
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value);
+// Takes cents, because that's what the API returns and what every amount in
+// this app is. Naming the unit on the fields is what stops a dollar figure
+// being passed here and rendering 100x too small.
+export function formatCurrency(cents: number | null | undefined): string {
+  if (cents == null) return "—";
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(cents / 100);
+}
+
+// The two edges where the user thinks in dollars: typing an amount, and
+// reading one back into an input.
+export function dollarsToCents(dollars: number): number {
+  return Math.round(dollars * 100);
+}
+
+export function centsToDollars(cents: number): number {
+  return cents / 100;
 }
 
 // Amounts are stored the way they read: negative is money out. A $50 coffee is

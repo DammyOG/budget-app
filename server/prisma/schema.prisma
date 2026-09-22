@@ -40,8 +40,11 @@ model Account {
   type             String   // depository | credit | investment | loan | manual
   subtype          String?  // checking | savings | credit card | ira | brokerage ...
   mask             String?
-  currentBalance   Float?
-  availableBalance Float?
+  // Integer cents. Floats can't represent 0.1, so balances drifted and exact
+  // comparisons needed tolerances; the name carries the unit because Int
+  // alone can't tell dollars from cents.
+  currentBalanceCents   Int?
+  availableBalanceCents Int?
   isoCurrencyCode  String?  @default("USD")
   isManual         Boolean  @default(false)
   archivedAt       DateTime?
@@ -77,11 +80,12 @@ model Transaction {
   plaidTransactionId  String?  @unique
   accountId           String
   categoryId          String?
-  amount              Float    // positive = money out, negative = money in (Plaid convention)
+  // Integer cents, negative for money out. See src/money.ts.
+  amountCents         Int
   // Magnitude of amount, stored because Prisma can't ORDER BY an expression
   // and sorting "biggest first" has to mean biggest either direction — a
   // $3,000 paycheck and a $3,000 rent payment are both big.
-  absAmount           Float    @default(0)
+  absAmountCents      Int      @default(0)
   date                DateTime
   name                String
   merchantName        String?
@@ -108,16 +112,16 @@ model Transaction {
   @@index([date])
   @@index([transferPairId])
   @@index([kind])
-  @@index([absAmount])
+  @@index([absAmountCents])
   // Duplicate detection groups on exactly these four.
-  @@index([accountId, name, amount, date])
+  @@index([accountId, name, amountCents, date])
 }
 
 model Budget {
   id         String   @id @default(cuid())
   categoryId String
   month      String   // "YYYY-MM"
-  amount     Float
+  amountCents Int // integer cents
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 

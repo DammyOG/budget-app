@@ -1,5 +1,14 @@
 import { useEffect, useState } from "react";
-import { api, Budget, Category, currentMonth, DashboardSummary, formatCurrency } from "../lib/api";
+import {
+  api,
+  Budget,
+  Category,
+  centsToDollars,
+  currentMonth,
+  DashboardSummary,
+  dollarsToCents,
+  formatCurrency,
+} from "../lib/api";
 import {
   Button,
   Card,
@@ -48,17 +57,19 @@ export default function Budgets() {
 
   const openEditor = (category: Category) => {
     setEditing(category);
-    setDraft(String(budgetFor(category.id)?.amount ?? ""));
+    // The field is in dollars; the stored value is cents.
+    const existing = budgetFor(category.id);
+    setDraft(existing ? String(centsToDollars(existing.amountCents)) : "");
     setPicking(false);
   };
 
   const save = async () => {
     if (!editing) return;
-    const amount = Number(draft);
-    if (draft === "" || Number.isNaN(amount) || amount < 0) return;
+    const dollars = Number(draft);
+    if (draft === "" || Number.isNaN(dollars) || dollars < 0) return;
     setSaving(true);
     try {
-      await api.setBudget(editing.id, month, amount);
+      await api.setBudget(editing.id, month, dollarsToCents(dollars));
       load();
       setEditing(null);
     } finally {
@@ -88,14 +99,14 @@ export default function Budgets() {
       const category = categories.find((c) => c.id === b.categoryId);
       if (!category) return null;
       const spent = spentFor(category.id);
-      const percentage = b.amount > 0 ? (spent / b.amount) * 100 : 0;
+      const percentage = b.amountCents > 0 ? (spent / b.amountCents) * 100 : 0;
       return {
         category,
-        budgeted: b.amount,
+        budgeted: b.amountCents,
         spent,
-        remaining: b.amount - spent,
+        remaining: b.amountCents - spent,
         percentage,
-        over: spent > b.amount,
+        over: spent > b.amountCents,
       };
     })
     .filter((s): s is BudgetStatus => s !== null)

@@ -212,8 +212,8 @@ export default function Recurring() {
                             </div>
                             <div className="text-xs text-gray-500">{tx.accountName}</div>
                           </div>
-                          <div className={`font-medium ${isOutflow(tx.amount) ? "text-red-600" : "text-green-600"}`}>
-                            {formatSignedAmount(tx.amount)}
+                          <div className={`font-medium ${isOutflow(tx.amountCents) ? "text-red-600" : "text-green-600"}`}>
+                            {formatSignedAmount(tx.amountCents)}
                           </div>
                         </div>
                       ))}
@@ -224,7 +224,7 @@ export default function Recurring() {
                       <div className="min-w-0">
                         <div className="truncate text-xs text-slate-500">Total</div>
                         <div className="truncate font-semibold tabular-nums">
-                          {formatCurrency(item.transactions.reduce((sum, tx) => sum + tx.amount, 0))}
+                          {formatCurrency(item.transactions.reduce((sum, tx) => sum + tx.amountCents, 0))}
                         </div>
                       </div>
                       <div className="min-w-0">

@@ -143,7 +143,7 @@ export default function Transfers() {
       .filter((i) => i.accountId !== matching.accountId)
       .map((i) => ({
         flow: i,
-        amountDiff: Math.abs(Math.abs(i.amount) - matching.amount),
+        amountDiff: Math.abs(Math.abs(i.amountCents) - matching.amountCents),
         dayDiff: Math.abs(new Date(i.date).getTime() - new Date(matching.date).getTime()) / 86_400_000,
       }))
       .sort((a, b) => a.amountDiff - b.amountDiff || a.dayDiff - b.dayDiff);
@@ -210,7 +210,7 @@ export default function Transfers() {
                     label="Out"
                     tone="out"
                     name={pair.fromTransaction.name}
-                    amount={pair.fromTransaction.amount}
+                    amount={pair.fromTransaction.amountCents}
                     accountName={pair.fromTransaction.accountName}
                     date={String(pair.fromTransaction.date)}
                   />
@@ -219,7 +219,7 @@ export default function Transfers() {
                     label="In"
                     tone="in"
                     name={pair.toTransaction.name}
-                    amount={pair.toTransaction.amount}
+                    amount={pair.toTransaction.amountCents}
                     accountName={pair.toTransaction.accountName}
                     date={String(pair.toTransaction.date)}
                   />
@@ -254,7 +254,7 @@ export default function Transfers() {
                         </div>
                       </div>
                       <span className="shrink-0 font-semibold tabular-nums text-red-600">
-                        -{formatCurrency(f.amount)}
+                        -{formatCurrency(f.amountCents)}
                       </span>
                     </button>
                   </li>
@@ -283,7 +283,7 @@ export default function Transfers() {
                       label="Out"
                       tone="out"
                       name={pair.outgoing.name}
-                      amount={pair.outgoing.amount}
+                      amount={pair.outgoing.amountCents}
                       accountName={pair.outgoing.accountName}
                       date={pair.outgoing.date}
                     />
@@ -294,7 +294,7 @@ export default function Transfers() {
                       label="In"
                       tone="in"
                       name={pair.incoming.name}
-                      amount={pair.incoming.amount}
+                      amount={pair.incoming.amountCents}
                       accountName={pair.incoming.accountName}
                       date={pair.incoming.date}
                     />
@@ -323,7 +323,7 @@ export default function Transfers() {
                   <div className="truncate text-sm font-medium">{matching.name}</div>
                   <div className="truncate text-xs text-slate-600">{matching.accountName}</div>
                 </div>
-                <span className="shrink-0 font-bold tabular-nums text-red-600">-{formatCurrency(matching.amount)}</span>
+                <span className="shrink-0 font-bold tabular-nums text-red-600">-{formatCurrency(matching.amountCents)}</span>
               </div>
             </div>
 
@@ -357,7 +357,7 @@ export default function Transfers() {
                         )}
                       </div>
                       <span className="shrink-0 font-semibold tabular-nums text-emerald-600">
-                        +{formatCurrency(Math.abs(flow.amount))}
+                        +{formatCurrency(Math.abs(flow.amountCents))}
                       </span>
                     </button>
                   </li>

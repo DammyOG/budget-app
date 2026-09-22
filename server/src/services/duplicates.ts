@@ -8,25 +8,25 @@ import { prisma } from "../db";
 export interface DuplicateKey {
   accountId: string;
   name: string;
-  amount: number;
+  amountCents: number;
   date: Date;
 }
 
-export function keyOf(d: { accountId: string; name: string; amount: number; date: Date | string }): string {
+export function keyOf(d: { accountId: string; name: string; amountCents: number; date: Date | string }): string {
   const date = typeof d.date === "string" ? d.date : d.date.toISOString();
-  return [d.accountId, d.name, d.amount, date.slice(0, 10)].join("\u0000");
+  return [d.accountId, d.name, d.amountCents, date.slice(0, 10)].join("\u0000");
 }
 
 // The (account, name, amount, date) tuples that occur more than once.
 export async function findDuplicateGroups(where: any = {}): Promise<DuplicateKey[]> {
   const groups = await prisma.transaction.groupBy({
-    by: ["accountId", "name", "amount", "date"],
+    by: ["accountId", "name", "amountCents", "date"],
     where,
     _count: { _all: true },
     having: { id: { _count: { gt: 1 } } },
   });
 
-  return groups.map((g) => ({ accountId: g.accountId, name: g.name, amount: g.amount, date: g.date }));
+  return groups.map((g) => ({ accountId: g.accountId, name: g.name, amountCents: g.amountCents, date: g.date }));
 }
 
 // Returns the set of group keys that have more than one transaction, so a
@@ -42,13 +42,13 @@ export function duplicateGroupFilter(groups: DuplicateKey[]) {
   return groups.map((g) => ({
     accountId: g.accountId,
     name: g.name,
-    amount: g.amount,
+    amountCents: g.amountCents,
     date: g.date,
   }));
 }
 
 export function isDuplicate(
-  tx: { accountId: string; name: string; amount: number; date: Date | string },
+  tx: { accountId: string; name: string; amountCents: number; date: Date | string },
   duplicateKeys: Set<string>
 ): boolean {
   return duplicateKeys.has(keyOf(tx));

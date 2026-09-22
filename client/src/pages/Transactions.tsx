@@ -106,10 +106,10 @@ function TransactionRow({ tx, onOpen }: { tx: Transaction; onOpen: () => void })
       </div>
       <div
         className={`shrink-0 font-semibold ${
-          isTransfer ? "text-slate-400" : isOutflow(tx.amount) ? "text-slate-900" : "text-emerald-600"
+          isTransfer ? "text-slate-400" : isOutflow(tx.amountCents) ? "text-slate-900" : "text-emerald-600"
         }`}
       >
-        {formatSignedAmount(tx.amount)}
+        {formatSignedAmount(tx.amountCents)}
       </div>
     </button>
   );

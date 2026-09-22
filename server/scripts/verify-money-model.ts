@@ -28,6 +28,11 @@ function check(label: string, actual: any, expected: any) {
   ok ? passed++ : failed++;
 }
 
+// The API speaks cents. These scripts read better in dollars, so amounts and
+// expected totals are written in dollars and converted here — which also means
+// a script can't accidentally assert against a figure in the wrong unit.
+const c = (dollars: number) => Math.round(dollars * 100);
+
 (async () => {
   // Clean slate: drop anything left behind by a previous run (including a
   // prior run that got interrupted before reaching its own cleanup at the
@@ -39,10 +44,10 @@ function check(label: string, actual: any, expected: any) {
     if (a.name.startsWith("VERIFY-")) await api(`/accounts/${a.id}/permanent`, { method: "DELETE" });
   }
 
-  const mkAccount = (name: string, institutionName: string, type: string, currentBalance: number) =>
+  const mkAccount = (name: string, institutionName: string, type: string, currentBalanceCents: number) =>
     api("/accounts/manual", {
       method: "POST",
-      body: JSON.stringify({ name, institutionName, type, currentBalance }),
+      body: JSON.stringify({ name, institutionName, type, currentBalanceCents }),
     });
 
   const checking = await mkAccount("VERIFY-Checking", "VERIFY-BofA", "depository", 5000);
@@ -58,20 +63,20 @@ function check(label: string, actual: any, expected: any) {
   const tx = (body: any) => api("/transactions/manual", { method: "POST", body: JSON.stringify(body) });
 
   // Zelle between two of my own accounts, legs settling 2 days apart.
-  const zelleOut = await tx({ accountId: checking.id, amount: -500, date: d(10), name: "Zelle Transfer To Ally" });
-  const zelleIn = await tx({ accountId: savings.id, amount: 500, date: d(12), name: "Zelle Transfer From BofA" });
+  const zelleOut = await tx({ accountId: checking.id, amountCents: c(-500), date: d(10), name: "Zelle Transfer To Ally" });
+  const zelleIn = await tx({ accountId: savings.id, amountCents: c(500), date: d(12), name: "Zelle Transfer From BofA" });
 
   // Credit card payment — the double-count case.
-  const cardPayOut = await tx({ accountId: checking.id, amount: -1200, date: d(15), name: "Chase Card Payment" });
-  const cardPayIn = await tx({ accountId: card.id, amount: 1200, date: d(15), name: "Payment Thank You" });
+  const cardPayOut = await tx({ accountId: checking.id, amountCents: c(-1200), date: d(15), name: "Chase Card Payment" });
+  const cardPayIn = await tx({ accountId: card.id, amountCents: c(1200), date: d(15), name: "Payment Thank You" });
 
   // Payroll.
-  await tx({ accountId: checking.id, amount: 3000, date: d(1), name: "ACME PAYROLL", categoryId: salary.id });
+  await tx({ accountId: checking.id, amountCents: c(3000), date: d(1), name: "ACME PAYROLL", categoryId: salary.id });
 
   // Real spending, plus a refund against the same category.
-  await tx({ accountId: card.id, amount: -200, date: d(5), name: "Amazon Order", categoryId: shopping.id });
-  await tx({ accountId: card.id, amount: 40, date: d(20), name: "Amazon Refund", categoryId: shopping.id });
-  await tx({ accountId: card.id, amount: -150, date: d(7), name: "Whole Foods", categoryId: groceries.id });
+  await tx({ accountId: card.id, amountCents: c(-200), date: d(5), name: "Amazon Order", categoryId: shopping.id });
+  await tx({ accountId: card.id, amountCents: c(40), date: d(20), name: "Amazon Refund", categoryId: shopping.id });
+  await tx({ accountId: card.id, amountCents: c(-150), date: d(7), name: "Whole Foods", categoryId: groceries.id });
 
   // Pair the two transfers explicitly (mirrors what auto-detection does).
   await api("/transfers/link", {
@@ -104,17 +109,17 @@ function check(label: string, actual: any, expected: any) {
   const summary = await api(`/dashboard/summary?month=${MONTH}`);
   // Spending = 200 (Amazon) - 40 (refund) + 150 (Whole Foods) = 310.
   // The 500 Zelle and 1200 card payment are transfers and must not appear.
-  check("Income is payroll only", summary.income, 3000);
-  check("Spending excludes transfers, nets refund", summary.spending, 310);
-  check("Net cash flow", summary.netCashFlow, 2690);
+  check("Income is payroll only", summary.income, c(3000));
+  check("Spending excludes transfers, nets refund", summary.spending, c(310));
+  check("Net cash flow", summary.netCashFlow, c(2690));
   check(
     "Refund reduces Shopping (200-40)",
     summary.spendingByCategory.find((c: any) => c.name === "Shopping")?.total,
-    160
+    c(160)
   );
   check(
     "No transfer leaked into spending categories",
-    summary.spendingByCategory.some((c: any) => c.total === 500 || c.total === 1200),
+    summary.spendingByCategory.some((x: any) => x.total === c(500) || x.total === c(1200)),
     false
   );
 
@@ -128,10 +133,10 @@ function check(label: string, actual: any, expected: any) {
   check(
     "Shopping nets to 160 here too",
     range.expensesByCategory.find((c: any) => c.name === "Shopping")?.total,
-    160
+    c(160)
   );
-  check("Monthly breakdown income", range.byMonth[0]?.income, 3000);
-  check("Monthly breakdown expenses", range.byMonth[0]?.expenses, 310);
+  check("Monthly breakdown income", range.byMonth[0]?.income, c(3000));
+  check("Monthly breakdown expenses", range.byMonth[0]?.expenses, c(310));
 
   console.log("\nOverride durability:");
   // Reclassifying a transfer as spending must break the pair, not orphan it.
@@ -152,8 +157,8 @@ function check(label: string, actual: any, expected: any) {
   check("Counterpart reverts by its own direction", counterpart.kind, "income");
 
   const summary2 = await api(`/dashboard/summary?month=${MONTH}`);
-  check("Reclassified leg now counts as spending", summary2.spending, 810);
-  check("Freed counterpart now counts as income", summary2.income, 3500);
+  check("Reclassified leg now counts as spending", summary2.spending, c(810));
+  check("Freed counterpart now counts as income", summary2.income, c(3500));
 
   // Auto-categorization must not overwrite a hand-set kind.
   await api("/transactions/auto-categorize", { method: "POST" });

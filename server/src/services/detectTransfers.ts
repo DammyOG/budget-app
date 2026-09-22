@@ -2,8 +2,8 @@ import { prisma } from "../db";
 import { isInflow, isOutflow } from "../money";
 
 interface TransferPair {
-  fromTransaction: { id: string; name: string; amount: number; date: Date; accountName: string };
-  toTransaction: { id: string; name: string; amount: number; date: Date; accountName: string };
+  fromTransaction: { id: string; name: string; amountCents: number; date: Date; accountName: string };
+  toTransaction: { id: string; name: string; amountCents: number; date: Date; accountName: string };
   confidence: "high" | "medium" | "low";
   // Why it thinks so, so a suggestion can be judged rather than just trusted.
   reason: string;
@@ -11,8 +11,6 @@ interface TransferPair {
 
 const WINDOW_DAYS = 120;
 const MAX_DAYS_APART = 4;
-// Cents, to absorb float error on amounts read back from SQLite.
-const AMOUNT_TOLERANCE = 0.01;
 
 function daysBetween(a: Date, b: Date): number {
   return Math.abs(a.getTime() - b.getTime()) / 86_400_000;
@@ -83,18 +81,22 @@ export async function detectPotentialTransfers(): Promise<TransferPair[]> {
   // inflows worth looking at are the ones in the matching bucket.
   const inflowsByAmount = new Map<string, Candidate[]>();
   for (const t of candidates) {
-    if (!isInflow(t.amount)) continue;
-    const key = Math.abs(t.amount).toFixed(2);
+    if (!isInflow(t.amountCents)) continue;
+    const key = String(Math.abs(t.amountCents));
     const list = inflowsByAmount.get(key);
     list ? list.push(t) : inflowsByAmount.set(key, [t]);
   }
 
   const pairs: TransferPair[] = [];
   for (const out of candidates) {
-    if (!isOutflow(out.amount)) continue;
-    for (const inn of inflowsByAmount.get(Math.abs(out.amount).toFixed(2)) ?? []) {
+    if (!isOutflow(out.amountCents)) continue;
+    for (const inn of inflowsByAmount.get(String(Math.abs(out.amountCents))) ?? []) {
       if (out.accountId === inn.accountId) continue; // same account isn't a transfer
-      if (Math.abs(Math.abs(out.amount) - Math.abs(inn.amount)) > AMOUNT_TOLERANCE) continue;
+      // Exact equality, now that amounts are integer cents. This carried a
+      // one-cent tolerance purely to absorb float error — two legs of the same
+      // transfer are the same number of cents, and the tolerance was quietly
+      // also matching genuinely different amounts a cent apart.
+      if (Math.abs(out.amountCents) !== Math.abs(inn.amountCents)) continue;
       if (daysBetween(out.date, inn.date) > MAX_DAYS_APART) continue;
 
       const { confidence, reason } = scorePair(out, inn);
@@ -102,14 +104,14 @@ export async function detectPotentialTransfers(): Promise<TransferPair[]> {
         fromTransaction: {
           id: out.id,
           name: out.name,
-          amount: out.amount,
+          amountCents: out.amountCents,
           date: out.date,
           accountName: describeAccount(out.account),
         },
         toTransaction: {
           id: inn.id,
           name: inn.name,
-          amount: Math.abs(inn.amount),
+          amountCents: Math.abs(inn.amountCents),
           date: inn.date,
           accountName: describeAccount(inn.account),
         },
@@ -135,15 +137,15 @@ export async function getUnmatchedFlows() {
   const shape = (t: Candidate) => ({
     id: t.id,
     name: t.name,
-    amount: t.amount,
+    amountCents: t.amountCents,
     date: t.date,
     accountId: t.accountId,
     accountName: describeAccount(t.account),
     kind: t.kind,
   });
   return {
-    outgoing: candidates.filter((t) => isOutflow(t.amount)).map(shape),
-    incoming: candidates.filter((t) => isInflow(t.amount)).map(shape),
+    outgoing: candidates.filter((t) => isOutflow(t.amountCents)).map(shape),
+    incoming: candidates.filter((t) => isInflow(t.amountCents)).map(shape),
   };
 }
 
@@ -168,15 +170,15 @@ export async function listLinkedPairs() {
     seen.add(leg.id);
     if (other) seen.add(other.id);
 
-    const out = isOutflow(leg.amount) ? leg : other;
-    const inn = isOutflow(leg.amount) ? other : leg;
+    const out = isOutflow(leg.amountCents) ? leg : other;
+    const inn = isOutflow(leg.amountCents) ? other : leg;
 
     pairs.push({
       outgoing: out
         ? {
             id: out.id,
             name: out.name,
-            amount: out.amount,
+            amountCents: out.amountCents,
             date: out.date,
             accountName: describeAccount(out.account),
           }
@@ -185,7 +187,7 @@ export async function listLinkedPairs() {
         ? {
             id: inn.id,
             name: inn.name,
-            amount: Math.abs(inn.amount),
+            amountCents: Math.abs(inn.amountCents),
             date: inn.date,
             accountName: describeAccount(inn.account),
           }
@@ -219,7 +221,7 @@ export async function linkTransferPair(transaction1Id: string, transaction2Id: s
   if (a.accountId === b.accountId) {
     throw new TransferLinkError("Both sides are on the same account, so no money moved between accounts.");
   }
-  if (isOutflow(a.amount) === isOutflow(b.amount)) {
+  if (isOutflow(a.amountCents) === isOutflow(b.amountCents)) {
     throw new TransferLinkError("A transfer needs one outgoing and one incoming transaction.");
   }
   for (const t of [a, b]) {
@@ -262,7 +264,7 @@ export async function unlinkTransferPair(transactionId: string) {
 
   const counterpart = await prisma.transaction.findUnique({
     where: { id: transaction.transferPairId },
-    select: { id: true, amount: true },
+    select: { id: true, amountCents: true },
   });
 
   // Each leg reverts by its own direction. Forcing both to "expense" would turn
@@ -275,7 +277,7 @@ export async function unlinkTransferPair(transactionId: string) {
     data: {
       transferPairId: null,
       categoryId: null,
-      kind: kindByDirection(transaction.amount),
+      kind: kindByDirection(transaction.amountCents),
     },
   });
 
@@ -285,7 +287,7 @@ export async function unlinkTransferPair(transactionId: string) {
       data: {
         transferPairId: null,
         categoryId: null,
-        kind: kindByDirection(counterpart.amount),
+        kind: kindByDirection(counterpart.amountCents),
       },
     });
   }

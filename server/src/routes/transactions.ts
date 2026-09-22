@@ -23,14 +23,14 @@ function buildOrderBy(sort: string, dir: "asc" | "desc") {
     case "amount":
       // By magnitude, so a $3,000 paycheck and $3,000 rent sort together as
       // "big" rather than landing at opposite ends of the list.
-      return [{ absAmount: dir }, { date: "desc" as const }, { id: "asc" as const }];
+      return [{ absAmountCents: dir }, { date: "desc" as const }, { id: "asc" as const }];
     case "name":
       return [{ name: dir }, { date: "desc" as const }, { id: "asc" as const }];
     case "date":
     default:
       // Biggest first within a day: otherwise a $2,000 rent payment and a $4
       // coffee on the same date come back in arbitrary insertion order.
-      return [{ date: dir }, { absAmount: "desc" as const }, { id: "asc" as const }];
+      return [{ date: dir }, { absAmountCents: "desc" as const }, { id: "asc" as const }];
   }
 }
 
@@ -66,11 +66,11 @@ router.get("/", async (req, res) => {
   // Applied server-side, not just to whatever page happens to be loaded —
   // filtering only the fetched rows would silently miss matches sitting on
   // a later page the client hasn't asked for yet. Range is on magnitude
-  // ("at least $50"), which absAmount now expresses directly.
+  // ("at least $50"), which absAmountCents now expresses directly.
   if (minAmount || maxAmount) {
-    where.absAmount = {};
-    if (minAmount) where.absAmount.gte = Number(minAmount);
-    if (maxAmount) where.absAmount.lte = Number(maxAmount);
+    where.absAmountCents = {};
+    if (minAmount) where.absAmountCents.gte = Number(minAmount);
+    if (maxAmount) where.absAmountCents.lte = Number(maxAmount);
   }
   if (pendingOnly === "true") where.pending = true;
 
@@ -89,7 +89,7 @@ router.get("/", async (req, res) => {
     // side — this is a raw sign test in a query rather than a call to
     // isInflow(), which is exactly why the sign convention needed a single
     // definition instead of being restated at each site.
-    where.NOT = { AND: [{ transferPairId: { not: null } }, { amount: { gt: 0 } }] };
+    where.NOT = { AND: [{ transferPairId: { not: null } }, { amountCents: { gt: 0 } }] };
   }
 
   const sortField = VALID_SORTS.has(String(sort)) ? String(sort) : "date";
@@ -133,7 +133,7 @@ router.get("/", async (req, res) => {
   const counterparts = pairIds.length
     ? await prisma.transaction.findMany({
         where: { id: { in: pairIds } },
-        select: { id: true, amount: true, account: { select: { name: true, institutionName: true } } },
+        select: { id: true, amountCents: true, account: { select: { name: true, institutionName: true } } },
       })
     : [];
   const counterpartById = new Map(counterparts.map((c) => [c.id, c]));
@@ -156,9 +156,12 @@ router.get("/", async (req, res) => {
 });
 
 router.post("/manual", async (req, res) => {
-  const { accountId, amount, date, name, categoryId, notes, kind } = req.body;
-  if (!accountId || amount == null || !date || !name) {
-    return res.status(400).json({ error: "accountId, amount, date, and name are required" });
+  // The API speaks cents, and the field name says so. A request carrying
+  // dollars in a field called amountCents would be off by a factor of 100
+  // with nothing to catch it, which is exactly what naming the unit prevents.
+  const { accountId, amountCents, date, name, categoryId, notes, kind } = req.body;
+  if (!accountId || amountCents == null || !date || !name) {
+    return res.status(400).json({ error: "accountId, amountCents, date, and name are required" });
   }
   if (kind && !VALID_KINDS.has(kind)) {
     return res.status(400).json({ error: `kind must be one of: ${[...VALID_KINDS].join(", ")}` });
@@ -166,7 +169,7 @@ router.post("/manual", async (req, res) => {
   const transaction = await prisma.transaction.create({
     data: {
       accountId,
-      amount: Number(amount),
+      amountCents: Math.round(Number(amountCents)),
       date: new Date(date),
       name,
       categoryId: categoryId || null,
@@ -183,7 +186,7 @@ router.post("/manual", async (req, res) => {
 });
 
 router.patch("/:id", async (req, res) => {
-  const { categoryId, notes, name, amount, date, kind } = req.body;
+  const { categoryId, notes, name, amountCents, date, kind } = req.body;
 
   if (kind !== undefined && !VALID_KINDS.has(kind)) {
     return res.status(400).json({ error: `kind must be one of: ${[...VALID_KINDS].join(", ")}` });
@@ -218,7 +221,7 @@ router.patch("/:id", async (req, res) => {
       kindLocked: kind === undefined ? undefined : true,
       notes: notes === undefined ? undefined : notes,
       name: name === undefined ? undefined : name,
-      amount: amount === undefined ? undefined : Number(amount),
+      amountCents: amountCents === undefined ? undefined : Math.round(Number(amountCents)),
       date: date === undefined ? undefined : new Date(date),
     },
   });

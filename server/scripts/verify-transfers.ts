@@ -31,6 +31,11 @@ function check(label: string, actual: any, expected: any) {
   ok ? passed++ : failed++;
 }
 
+// The API speaks cents. These scripts read better in dollars, so amounts and
+// expected totals are written in dollars and converted here — which also means
+// a script can't accidentally assert against a figure in the wrong unit.
+const c = (dollars: number) => Math.round(dollars * 100);
+
 const MONTH = { start: "2026-09-01T00:00:00Z", end: "2026-10-01T00:00:00Z" };
 
 (async () => {
@@ -40,16 +45,17 @@ const MONTH = { start: "2026-09-01T00:00:00Z", end: "2026-10-01T00:00:00Z" };
   const mk = (name: string, type: string) =>
     api("/accounts/manual", {
       method: "POST",
-      body: JSON.stringify({ name, institutionName: "XFER-Bank", type, currentBalance: 0 }),
+      body: JSON.stringify({ name, institutionName: "XFER-Bank", type, currentBalanceCents: 0 }),
     });
   const checking = await mk("XFER-Checking", "depository");
   const savings = await mk("XFER-Savings", "depository");
   const card = await mk("XFER-Card", "credit");
 
-  const tx = (acct: any, amount: number, date: string, name: string) =>
+  // Callers pass dollars; the API takes cents.
+  const tx = (acct: any, dollars: number, date: string, name: string) =>
     api("/transactions/manual", {
       method: "POST",
-      body: JSON.stringify({ accountId: acct.id, amount, date, name }),
+      body: JSON.stringify({ accountId: acct.id, amountCents: c(dollars), date, name }),
     });
 
   const raw = async () => {
@@ -67,7 +73,7 @@ const MONTH = { start: "2026-09-01T00:00:00Z", end: "2026-10-01T00:00:00Z" };
   // from another script — would otherwise make every number wrong, and running
   // the suite twice would give different answers.
   const baseline = await raw();
-  const round = (n: number) => Math.round(n * 100) / 100;
+  const round = (n: number) => Math.round(n);
   const totals = async () => {
     const now = await raw();
     return {
@@ -91,8 +97,8 @@ const MONTH = { start: "2026-09-01T00:00:00Z", end: "2026-10-01T00:00:00Z" };
   await api("/transactions/auto-categorize", { method: "POST" });
 
   const afterZelle = await totals();
-  check("Income excludes the Zelle", afterZelle.income, 4000);
-  check("Spending excludes the Zelle", afterZelle.expenses, 120);
+  check("Income excludes the Zelle", afterZelle.income, c(4000));
+  check("Spending excludes the Zelle", afterZelle.expenses, c(120));
   check("No Zelle Received in income by category", afterZelle.incomeCats.includes("Zelle Received"), false);
   check("No Zelle Sent in spending by category", afterZelle.expenseCats.includes("Zelle Sent"), false);
   check("No Transfer category in spending by category", afterZelle.expenseCats.includes("Transfer"), false);
@@ -103,8 +109,8 @@ const MONTH = { start: "2026-09-01T00:00:00Z", end: "2026-10-01T00:00:00Z" };
   await api("/transactions/auto-categorize", { method: "POST" });
 
   const afterCard = await totals();
-  check("Card payment doesn't become income", afterCard.income, 4000);
-  check("Card payment doesn't become spending", afterCard.expenses, 120);
+  check("Card payment doesn't become income", afterCard.income, c(4000));
+  check("Card payment doesn't become spending", afterCard.expenses, c(120));
 
   console.log("\nRe-running categorization doesn't undo a match:");
   // Categorization used to relabel a matched Zelle back to "Zelle Sent" and
@@ -113,8 +119,8 @@ const MONTH = { start: "2026-09-01T00:00:00Z", end: "2026-10-01T00:00:00Z" };
   await api("/transactions/auto-categorize", { method: "POST" });
   await api("/transactions/auto-categorize", { method: "POST" });
   const afterRerun = await totals();
-  check("Income still excludes matched transfers", afterRerun.income, 4000);
-  check("Spending still excludes matched transfers", afterRerun.expenses, 120);
+  check("Income still excludes matched transfers", afterRerun.income, c(4000));
+  check("Spending still excludes matched transfers", afterRerun.expenses, c(120));
 
   console.log("\nMatching by hand, for pairs the detector won't suggest:");
   // Amount differs by a wire fee and the legs are a week apart, so this is
@@ -144,14 +150,14 @@ const MONTH = { start: "2026-09-01T00:00:00Z", end: "2026-10-01T00:00:00Z" };
     body: JSON.stringify({ transaction1Id: feeOut.id, transaction2Id: feeIn.id }),
   });
   const afterManual = await totals();
-  check("Manually matched pair leaves income alone", afterManual.income, 4000);
-  check("Manually matched pair leaves spending alone", afterManual.expenses, 120);
+  check("Manually matched pair leaves income alone", afterManual.income, c(4000));
+  check("Manually matched pair leaves spending alone", afterManual.expenses, c(120));
 
   console.log("\nUnmatching puts both sides back:");
   await api("/transfers/unlink", { method: "POST", body: JSON.stringify({ transactionId: feeOut.id }) });
   const afterUnlink = await totals();
-  check("The outflow counts as spending again", afterUnlink.expenses, 120 + 2000);
-  check("The inflow counts as income again", afterUnlink.income, 4000 + 1975);
+  check("The outflow counts as spending again", afterUnlink.expenses, c(120 + 2000));
+  check("The inflow counts as income again", afterUnlink.income, c(4000 + 1975));
 
   console.log("\nA match that can't be right is refused with a reason:");
   const a1 = await tx(checking, -50, "2026-09-20", "XFER ONE");

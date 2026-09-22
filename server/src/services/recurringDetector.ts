@@ -13,7 +13,7 @@ export interface RecurringTransaction {
   nextExpectedDate: Date;
   transactions: {
     id: string;
-    amount: number;
+    amountCents: number;
     date: Date;
     accountName: string;
   }[];
@@ -27,9 +27,11 @@ export async function detectRecurringTransactions(): Promise<RecurringTransactio
   // Get all transactions, grouped by name
   const transactions = await prisma.transaction.findMany({
     where: {
-      // Exclude transfers and manual transactions
+      // Exclude transfers and manual transactions. Keyed off the category
+      // flag rather than the literal name "Transfer", so a category the user
+      // marked as a transfer is excluded too.
       categoryId: { not: null },
-      category: { name: { not: "Transfer" } },
+      category: { isTransfer: false },
       isManual: false,
     },
     include: {
@@ -95,9 +97,10 @@ export async function detectRecurringTransactions(): Promise<RecurringTransactio
       continue;
     }
 
-    // Calculate average amount (use absolute value for expenses)
-    const amounts = txs.map((tx) => tx.amount);
-    const avgAmount = amounts.reduce((a, b) => a + b, 0) / amounts.length;
+    // Rounded to a whole cent: an average of integers is fractional, and a
+    // figure presented as money shouldn't carry a third of a cent.
+    const amounts = txs.map((tx) => tx.amountCents);
+    const avgAmount = Math.round(amounts.reduce((a, b) => a + b, 0) / amounts.length);
 
     // Calculate next expected date
     const lastDate = new Date(txs[txs.length - 1].date);
@@ -116,7 +119,7 @@ export async function detectRecurringTransactions(): Promise<RecurringTransactio
       nextExpectedDate,
       transactions: txs.map((tx) => ({
         id: tx.id,
-        amount: tx.amount,
+        amountCents: tx.amountCents,
         date: new Date(tx.date),
         accountName: tx.account.name,
       })),

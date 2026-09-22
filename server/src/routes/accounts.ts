@@ -27,7 +27,7 @@ router.get("/archived", async (req, res) => {
 // Manual accounts exist for anything you don't want to (or can't) link via
 // Plaid — enter a balance by hand and update it yourself over time.
 router.post("/manual", async (req, res) => {
-  const { name, institutionName, type, subtype, currentBalance } = req.body;
+  const { name, institutionName, type, subtype, currentBalanceCents } = req.body;
   if (!name || !institutionName || !type) {
     return res.status(400).json({ error: "name, institutionName, and type are required" });
   }
@@ -37,7 +37,7 @@ router.post("/manual", async (req, res) => {
       institutionName,
       type,
       subtype: subtype ?? null,
-      currentBalance: currentBalance != null ? Number(currentBalance) : null,
+      currentBalanceCents: currentBalanceCents != null ? Number(currentBalanceCents) : null,
       isManual: true,
     },
   });
@@ -45,7 +45,7 @@ router.post("/manual", async (req, res) => {
 });
 
 router.patch("/:id", async (req, res) => {
-  const { name, currentBalance } = req.body;
+  const { name, currentBalanceCents } = req.body;
   const account = await prisma.account.findUnique({ where: { id: req.params.id } });
   if (!account) return res.status(404).json({ error: "Not found" });
   if (!account.isManual) {
@@ -55,7 +55,7 @@ router.patch("/:id", async (req, res) => {
     where: { id: req.params.id },
     data: {
       name: name ?? undefined,
-      currentBalance: currentBalance != null ? Number(currentBalance) : undefined,
+      currentBalanceCents: currentBalanceCents != null ? Number(currentBalanceCents) : undefined,
     },
   });
   res.json(updated);

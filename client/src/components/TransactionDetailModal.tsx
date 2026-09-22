@@ -82,12 +82,12 @@ export default function TransactionDetailModal({
               className={`text-3xl font-bold ${
                 transaction.kind === "transfer"
                   ? "text-gray-500"
-                  : isOutflow(transaction.amount)
+                  : isOutflow(transaction.amountCents)
                   ? "text-red-600"
                   : "text-green-600"
               }`}
             >
-              {formatSignedAmount(transaction.amount)}
+              {formatSignedAmount(transaction.amountCents)}
             </div>
             <p className="text-xs text-gray-500 mt-1">
               {/* Labelled by kind, not by sign — a transfer moves money in one
@@ -96,7 +96,7 @@ export default function TransactionDetailModal({
                 ? "Transfer — excluded from income and spending"
                 : transaction.kind === "income"
                 ? "Income"
-                : !isOutflow(transaction.amount)
+                : !isOutflow(transaction.amountCents)
                 ? "Refund"
                 : "Expense"}
             </p>

@@ -14,14 +14,14 @@ router.get("/", async (req, res) => {
 });
 
 router.put("/", async (req, res) => {
-  const { categoryId, month, amount } = req.body;
-  if (!categoryId || !month || amount == null) {
-    return res.status(400).json({ error: "categoryId, month, and amount are required" });
+  const { categoryId, month, amountCents } = req.body;
+  if (!categoryId || !month || amountCents == null) {
+    return res.status(400).json({ error: "categoryId, month, and amountCents are required" });
   }
   const budget = await prisma.budget.upsert({
     where: { categoryId_month: { categoryId, month } },
-    create: { categoryId, month, amount: Number(amount) },
-    update: { amount: Number(amount) },
+    create: { categoryId, month, amountCents: Math.round(Number(amountCents)) },
+    update: { amountCents: Math.round(Number(amountCents)) },
   });
   res.json(budget);
 });

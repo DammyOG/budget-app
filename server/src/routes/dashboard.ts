@@ -46,7 +46,7 @@ router.get("/summary", async (req, res) => {
   let liabilities = 0;
   const byType: Record<string, number> = {};
   for (const acct of accounts) {
-    const balance = acct.currentBalance ?? 0;
+    const balance = acct.currentBalanceCents ?? 0;
     if (LIABILITY_TYPES.has(acct.type)) {
       liabilities += balance;
     } else {
@@ -70,22 +70,22 @@ router.get("/summary", async (req, res) => {
     const key = tx.categoryId || "uncategorized";
     const name = tx.category?.name || "Uncategorized";
     if (!spendingByCategory[key]) spendingByCategory[key] = { categoryId: tx.categoryId, name, total: 0 };
-    spendingByCategory[key].total += spendingAmount(tx.amount);
-    spending += spendingAmount(tx.amount);
+    spendingByCategory[key].total += spendingAmount(tx.amountCents);
+    spending += spendingAmount(tx.amountCents);
   }
 
   const incomeTransactions = await prisma.transaction.findMany({
     where: { date: { gte: startDate, lt: endDate }, kind: "income" },
-    select: { amount: true },
+    select: { amountCents: true },
   });
   // Stored positive already (money in), so this is a plain sum.
-  const income = incomeTransactions.reduce((sum, tx) => sum + incomeAmount(tx.amount), 0);
+  const income = incomeTransactions.reduce((sum, tx) => sum + incomeAmount(tx.amountCents), 0);
 
   const budgets = await prisma.budget.findMany({ where: { month }, include: { category: true } });
   const budgetVsActual = budgets.map((b) => ({
     categoryId: b.categoryId,
     categoryName: b.category.name,
-    budgeted: b.amount,
+    budgeted: b.amountCents,
     spent: spendingByCategory[b.categoryId]?.total || 0,
   }));
 
@@ -143,11 +143,11 @@ router.get("/income-spending", async (req, res) => {
     const [previousTx, trendTx] = await Promise.all([
       prisma.transaction.findMany({
         where: { date: { gte: previousRange.startDate, lt: previousRange.endDate } },
-        select: { amount: true, kind: true },
+        select: { amountCents: true, kind: true },
       }),
       prisma.transaction.findMany({
         where: { date: { gte: addMonths(endDate, -TREND_MONTHS), lt: endDate } },
-        select: { amount: true, kind: true, date: true },
+        select: { amountCents: true, kind: true, date: true },
       }),
     ]);
 
@@ -158,8 +158,8 @@ router.get("/income-spending", async (req, res) => {
     const income = transactions.filter((t) => t.kind === "income");
     const expenses = transactions.filter((t) => t.kind === "expense");
 
-    const totalIncome = income.reduce((sum, t) => sum + incomeAmount(t.amount), 0);
-    const totalExpenses = expenses.reduce((sum, t) => sum + spendingAmount(t.amount), 0);
+    const totalIncome = income.reduce((sum, t) => sum + incomeAmount(t.amountCents), 0);
+    const totalExpenses = expenses.reduce((sum, t) => sum + spendingAmount(t.amountCents), 0);
 
     // Income by category
     const incomeByCategory: Record<string, { categoryId: string | null; name: string; total: number }> = {};
@@ -167,7 +167,7 @@ router.get("/income-spending", async (req, res) => {
       const key = tx.categoryId || "uncategorized";
       const name = tx.category?.name || "Uncategorized";
       if (!incomeByCategory[key]) incomeByCategory[key] = { categoryId: tx.categoryId, name, total: 0 };
-      incomeByCategory[key].total += incomeAmount(tx.amount);
+      incomeByCategory[key].total += incomeAmount(tx.amountCents);
     }
 
     // Expenses by category
@@ -176,7 +176,7 @@ router.get("/income-spending", async (req, res) => {
       const key = tx.categoryId || "uncategorized";
       const name = tx.category?.name || "Uncategorized";
       if (!expensesByCategory[key]) expensesByCategory[key] = { categoryId: tx.categoryId, name, total: 0 };
-      expensesByCategory[key].total += spendingAmount(tx.amount);
+      expensesByCategory[key].total += spendingAmount(tx.amountCents);
     }
 
     // Month-by-month breakdown (if groupBy is month)
@@ -190,16 +190,16 @@ router.get("/income-spending", async (req, res) => {
         // Bucketed by kind rather than sign, so refunds reduce that month's
         // spending instead of showing up as income.
         if (tx.kind === "income") {
-          byMonth[monthKey].income += incomeAmount(tx.amount);
+          byMonth[monthKey].income += incomeAmount(tx.amountCents);
         } else {
-          byMonth[monthKey].expenses += spendingAmount(tx.amount);
+          byMonth[monthKey].expenses += spendingAmount(tx.amountCents);
         }
         byMonth[monthKey].net = byMonth[monthKey].income - byMonth[monthKey].expenses;
       }
     }
 
-    const previousIncome = previousTx.filter((t) => t.kind === "income").reduce((s, t) => s + incomeAmount(t.amount), 0);
-    const previousExpenses = previousTx.filter((t) => t.kind === "expense").reduce((s, t) => s + spendingAmount(t.amount), 0);
+    const previousIncome = previousTx.filter((t) => t.kind === "income").reduce((s, t) => s + incomeAmount(t.amountCents), 0);
+    const previousExpenses = previousTx.filter((t) => t.kind === "expense").reduce((s, t) => s + spendingAmount(t.amountCents), 0);
 
     // Trailing months, so the charts have something to draw even when the
     // selected range is a single month.
@@ -215,8 +215,8 @@ router.get("/income-spending", async (req, res) => {
       const key = tx.date.toISOString().slice(0, 7);
       const bucket = trendBuckets[key];
       if (!bucket) continue;
-      if (tx.kind === "income") bucket.income += incomeAmount(tx.amount);
-      else bucket.expenses += spendingAmount(tx.amount);
+      if (tx.kind === "income") bucket.income += incomeAmount(tx.amountCents);
+      else bucket.expenses += spendingAmount(tx.amountCents);
       bucket.net = bucket.income - bucket.expenses;
     }
 

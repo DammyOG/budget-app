@@ -25,6 +25,11 @@ function check(label: string, actual: any, expected: any) {
   ok ? passed++ : failed++;
 }
 
+// The API speaks cents. These scripts read better in dollars, so amounts and
+// expected totals are written in dollars and converted here — which also means
+// a script can't accidentally assert against a figure in the wrong unit.
+const c = (dollars: number) => Math.round(dollars * 100);
+
 const DAY = "2026-07-15";
 
 (async () => {
@@ -38,7 +43,7 @@ const DAY = "2026-07-15";
   const mk = (name: string, type: string) =>
     api("/accounts/manual", {
       method: "POST",
-      body: JSON.stringify({ name, institutionName: "LIST-Bank", type, currentBalance: 0 }),
+      body: JSON.stringify({ name, institutionName: "LIST-Bank", type, currentBalanceCents: 0 }),
     });
   const checking = await mk("LIST-Checking", "depository");
   const savings = await mk("LIST-Savings", "depository");
@@ -48,15 +53,15 @@ const DAY = "2026-07-15";
   // 25 transactions all on the SAME day — every one a tie under date sort.
   // This is what used to make offset pagination unstable.
   for (let i = 1; i <= 25; i++) {
-    await tx({ accountId: checking.id, amount: -i, date: DAY, name: `Same Day ${String(i).padStart(2, "0")}` });
+    await tx({ accountId: checking.id, amountCents: c(-i), date: DAY, name: `Same Day ${String(i).padStart(2, "0")}` });
   }
 
   console.log("\nSame-day tie-break (biggest first):");
   const firstPage = await api(`/transactions?limit=5&startDate=${DAY}&endDate=${DAY}`);
   check(
     "Largest same-day amount leads",
-    firstPage.transactions.slice(0, 3).map((t: any) => t.amount),
-    [-25, -24, -23]
+    firstPage.transactions.slice(0, 3).map((t: any) => t.amountCents),
+    [c(-25), c(-24), c(-23)]
   );
 
   console.log("\nPagination stability across ties:");
@@ -77,7 +82,7 @@ const DAY = "2026-07-15";
   );
 
   console.log("\nSort by amount (magnitude, not signed):");
-  await tx({ accountId: checking.id, amount: 3000, date: DAY, name: "Big Paycheck", kind: "income" });
+  await tx({ accountId: checking.id, amountCents: c(3000), date: DAY, name: "Big Paycheck", kind: "income" });
   const byAmount = await api(`/transactions?sort=amount&dir=desc&limit=3&startDate=${DAY}&endDate=${DAY}`);
   check(
     "A large inflow ranks as big, not last",
@@ -90,8 +95,8 @@ const DAY = "2026-07-15";
   check("Ascending name sort", byName.transactions[0].name, "Big Paycheck");
 
   console.log("\nTransfer pair collapsing:");
-  const out = await tx({ accountId: checking.id, amount: -500, date: DAY, name: "Transfer Out" });
-  const inn = await tx({ accountId: savings.id, amount: 500, date: DAY, name: "Transfer In" });
+  const out = await tx({ accountId: checking.id, amountCents: c(-500), date: DAY, name: "Transfer Out" });
+  const inn = await tx({ accountId: savings.id, amountCents: c(500), date: DAY, name: "Transfer In" });
   await api("/transfers/link", {
     method: "POST",
     body: JSON.stringify({ transaction1Id: out.id, transaction2Id: inn.id }),
@@ -119,9 +124,9 @@ const DAY = "2026-07-15";
   check("Response reports it did not collapse", savingsLedger.collapsed, false);
 
   console.log("\nDuplicate detection:");
-  await tx({ accountId: checking.id, amount: -12.99, date: DAY, name: "NETFLIX" });
-  await tx({ accountId: checking.id, amount: -12.99, date: DAY, name: "NETFLIX" });
-  await tx({ accountId: checking.id, amount: -9.99, date: DAY, name: "SPOTIFY" });
+  await tx({ accountId: checking.id, amountCents: c(-12.99), date: DAY, name: "NETFLIX" });
+  await tx({ accountId: checking.id, amountCents: c(-12.99), date: DAY, name: "NETFLIX" });
+  await tx({ accountId: checking.id, amountCents: c(-9.99), date: DAY, name: "SPOTIFY" });
 
   const withDupes = await api(`/transactions?limit=100&startDate=${DAY}&endDate=${DAY}`);
   const netflix = withDupes.transactions.filter((t: any) => t.name === "NETFLIX");

@@ -22,6 +22,11 @@ function check(label: string, actual: any, expected: any) {
   ok ? passed++ : failed++;
 }
 
+// The API speaks cents. These scripts read better in dollars, so amounts and
+// expected totals are written in dollars and converted here — which also means
+// a script can't accidentally assert against a figure in the wrong unit.
+const c = (dollars: number) => Math.round(dollars * 100);
+
 const D = (n: number) => new Date(Date.UTC(2026, 8, n)).toISOString().slice(0, 10);
 
 (async () => {
@@ -30,12 +35,16 @@ const D = (n: number) => new Date(Date.UTC(2026, 8, n)).toISOString().slice(0, 1
 
   const acct = await api("/accounts/manual", {
     method: "POST",
-    body: JSON.stringify({ name: "CAT-Card", institutionName: "CAT-Bank", type: "credit", currentBalance: 0 }),
+    body: JSON.stringify({ name: "CAT-Card", institutionName: "CAT-Bank", type: "credit", currentBalanceCents: 0 }),
   });
   const categories = await api("/categories");
   const cat = (n: string) => categories.find((c: any) => c.name === n).id;
-  const tx = (name: string, amount: number, day: number) =>
-    api("/transactions/manual", { method: "POST", body: JSON.stringify({ accountId: acct.id, amount, date: D(day), name }) });
+  // Callers pass dollars; the API takes cents.
+  const tx = (name: string, dollars: number, day: number) =>
+    api("/transactions/manual", {
+      method: "POST",
+      body: JSON.stringify({ accountId: acct.id, amountCents: c(dollars), date: D(day), name }),
+    });
 
   // A merchant with a different order id on every charge — the case that made
   // learned rules useless, because each descriptor is unique. Names are
@@ -150,11 +159,11 @@ const D = (n: number) => new Date(Date.UTC(2026, 8, n)).toISOString().slice(0, 1
   // bucket and the client's charts (>1) and comparison (>=2) never rendered.
   const augTx = await api("/transactions/manual", {
     method: "POST",
-    body: JSON.stringify({ accountId: acct.id, amount: 1000, date: "2026-08-10", name: "CAT-PRIOR PAYROLL", kind: "income" }),
+    body: JSON.stringify({ accountId: acct.id, amountCents: c(1000), date: "2026-08-10", name: "CAT-PRIOR PAYROLL", kind: "income" }),
   });
   const sepTx = await api("/transactions/manual", {
     method: "POST",
-    body: JSON.stringify({ accountId: acct.id, amount: 1500, date: "2026-09-10", name: "CAT-CURRENT PAYROLL", kind: "income" }),
+    body: JSON.stringify({ accountId: acct.id, amountCents: c(1500), date: "2026-09-10", name: "CAT-CURRENT PAYROLL", kind: "income" }),
   });
   const sep = await api("/dashboard/income-spending?startDate=2026-09-01T00:00:00Z&endDate=2026-10-01T00:00:00Z&groupBy=month");
   check("Selected month income", sep.totalIncome >= 1500, true);

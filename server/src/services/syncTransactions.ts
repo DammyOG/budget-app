@@ -39,14 +39,14 @@ export async function syncTransactionsForItem(plaidItemDbId: string) {
         create: {
           plaidTransactionId: tx.transaction_id,
           accountId,
-          amount: fromPlaidAmount(tx.amount),
+          amountCents: fromPlaidAmount(tx.amount),
           date: new Date(tx.date),
           name: tx.name,
           merchantName: tx.merchant_name ?? null,
           pending: tx.pending,
         },
         update: {
-          amount: fromPlaidAmount(tx.amount),
+          amountCents: fromPlaidAmount(tx.amount),
           date: new Date(tx.date),
           name: tx.name,
           merchantName: tx.merchant_name ?? null,
@@ -64,7 +64,7 @@ export async function syncTransactionsForItem(plaidItemDbId: string) {
       await prisma.transaction.update({
         where: { id: existing.id },
         data: {
-          amount: fromPlaidAmount(tx.amount),
+          amountCents: fromPlaidAmount(tx.amount),
           date: new Date(tx.date),
           name: tx.name,
           merchantName: tx.merchant_name ?? null,

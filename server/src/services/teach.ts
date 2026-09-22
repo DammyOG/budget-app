@@ -28,7 +28,7 @@ export async function getTeachQueue(limit = 10): Promise<{
   const [uncategorized, categorizable, model] = await Promise.all([
     prisma.transaction.findMany({
       where: { categoryId: null, kind: { not: "transfer" } },
-      select: { id: true, name: true, amount: true, date: true, account: { select: { name: true } } },
+      select: { id: true, name: true, amountCents: true, date: true, account: { select: { name: true } } },
       orderBy: { date: "desc" },
     }),
     prisma.transaction.count({ where: { kind: { not: "transfer" } } }),
@@ -55,7 +55,7 @@ export async function getTeachQueue(limit = 10): Promise<{
       groups.set(key, group);
     }
     group.count++;
-    group.totalAmount += Math.abs(tx.amount);
+    group.totalAmount += Math.abs(tx.amountCents);
     group.transactionIds.push(tx.id);
     if (tx.date > group.lastDate) group.lastDate = tx.date;
   }

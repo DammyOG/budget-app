@@ -208,7 +208,7 @@ export default function IncomeSpending() {
 
         console.log(`Loaded ${filtered.length} transactions for ${key}:`, filtered.map(t => ({
           name: t.name,
-          amount: t.amount,
+          amountCents: t.amountCents,
           date: t.date,
           categoryId: t.categoryId
         })));
@@ -700,7 +700,7 @@ export default function IncomeSpending() {
                                       </div>
                                     </div>
                                     <span className="shrink-0 text-sm font-medium tabular-nums text-emerald-600">
-                                      {formatCurrency(Math.abs(tx.amount))}
+                                      {formatCurrency(Math.abs(tx.amountCents))}
                                     </span>
                                   </div>
                                   <select
@@ -725,7 +725,7 @@ export default function IncomeSpending() {
                             <div className="flex justify-between border-t bg-slate-100 p-3 text-xs text-slate-600">
                               <span>Showing {transactions.length} transaction{transactions.length !== 1 ? "s" : ""}</span>
                               <span>
-                                Sum: {formatCurrency(transactions.reduce((sum, tx) => sum + Math.abs(tx.amount), 0))}
+                                Sum: {formatCurrency(transactions.reduce((sum, tx) => sum + Math.abs(tx.amountCents), 0))}
                               </span>
                             </div>
                           </>
@@ -790,7 +790,7 @@ export default function IncomeSpending() {
                                       </div>
                                     </div>
                                     <span className="shrink-0 text-sm font-medium tabular-nums text-red-600">
-                                      {formatCurrency(tx.amount)}
+                                      {formatCurrency(tx.amountCents)}
                                     </span>
                                   </div>
                                   <select
@@ -814,7 +814,7 @@ export default function IncomeSpending() {
                             </div>
                             <div className="flex justify-between border-t bg-slate-100 p-3 text-xs text-slate-600">
                               <span>Showing {transactions.length} transaction{transactions.length !== 1 ? "s" : ""}</span>
-                              <span>Sum: {formatCurrency(transactions.reduce((sum, tx) => sum + tx.amount, 0))}</span>
+                              <span>Sum: {formatCurrency(transactions.reduce((sum, tx) => sum + tx.amountCents, 0))}</span>
                             </div>
                           </>
                         )}

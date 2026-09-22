@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { api, Account, formatCurrency, formatRelativeTime } from "../lib/api";
+import { api, Account, dollarsToCents, formatCurrency, formatRelativeTime } from "../lib/api";
 import PlaidLinkButton from "../components/PlaidLinkButton";
 import ReconnectButton from "../components/ReconnectButton";
 import ConfirmDialog from "../components/ConfirmDialog";
@@ -28,7 +28,8 @@ function AddManualAccountSheet({
   const [institutionName, setInstitutionName] = useState("");
   const [type, setType] = useState("depository");
   const [subtype, setSubtype] = useState("");
-  const [currentBalance, setCurrentBalance] = useState("");
+  // Held as the dollars string the user typed; converted on submit.
+  const [balanceDollars, setBalanceDollars] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -42,12 +43,12 @@ function AddManualAccountSheet({
         institutionName,
         type,
         subtype: subtype || null,
-        currentBalance: currentBalance ? Number(currentBalance) : null,
+        currentBalanceCents: balanceDollars ? dollarsToCents(Number(balanceDollars)) : null,
       });
       setName("");
       setInstitutionName("");
       setSubtype("");
-      setCurrentBalance("");
+      setBalanceDollars("");
       onAdded();
       onClose();
     } catch (err: any) {
@@ -92,8 +93,8 @@ function AddManualAccountSheet({
           inputMode="decimal"
           step="0.01"
           placeholder="Current balance"
-          value={currentBalance}
-          onChange={(e) => setCurrentBalance(e.target.value)}
+          value={balanceDollars}
+          onChange={(e) => setBalanceDollars(e.target.value)}
           className={inputClass}
         />
         {error && <p className="text-sm text-red-600">{error}</p>}
@@ -204,7 +205,7 @@ export default function Accounts() {
     let assets = 0;
     let liabilities = 0;
     for (const a of accounts) {
-      const b = a.currentBalance ?? 0;
+      const b = a.currentBalanceCents ?? 0;
       if (b < 0) liabilities += b;
       else assets += b;
     }
@@ -325,10 +326,10 @@ export default function Accounts() {
                         </div>
                         <span
                           className={`shrink-0 font-semibold tabular-nums ${
-                            (a.currentBalance ?? 0) < 0 ? "text-red-600" : "text-slate-900"
+                            (a.currentBalanceCents ?? 0) < 0 ? "text-red-600" : "text-slate-900"
                           }`}
                         >
-                          {formatCurrency(a.currentBalance)}
+                          {formatCurrency(a.currentBalanceCents)}
                         </span>
                       </button>
                     </li>
@@ -360,7 +361,7 @@ export default function Accounts() {
           <div className="space-y-4">
             <div className="flex items-baseline justify-between">
               <span className="text-sm text-slate-500">Balance</span>
-              <span className="text-lg font-semibold tabular-nums">{formatCurrency(selected.currentBalance)}</span>
+              <span className="text-lg font-semibold tabular-nums">{formatCurrency(selected.currentBalanceCents)}</span>
             </div>
             <div className="flex items-baseline justify-between">
               <span className="text-sm text-slate-500">Type</span>
