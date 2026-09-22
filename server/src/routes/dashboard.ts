@@ -5,6 +5,34 @@ const router = Router();
 
 const LIABILITY_TYPES = new Set(["credit", "loan"]);
 
+// How far back the trend chart reaches, independent of the selected range.
+const TREND_MONTHS = 12;
+
+function addMonths(date: Date, months: number): Date {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + months, date.getUTCDate()));
+}
+
+function isMonthStart(d: Date): boolean {
+  return d.getUTCDate() === 1 && d.getUTCHours() === 0 && d.getUTCMinutes() === 0 && d.getUTCSeconds() === 0;
+}
+
+// The equivalent stretch immediately before the selected one. Month-aligned
+// ranges step back by whole calendar months, because subtracting the elapsed
+// milliseconds from "September" lands on August 2nd rather than August 1st and
+// would quietly drop a day of the comparison.
+function previousPeriod(startDate: Date, endDate: Date): { startDate: Date; endDate: Date } {
+  if (isMonthStart(startDate) && isMonthStart(endDate)) {
+    const months =
+      (endDate.getUTCFullYear() - startDate.getUTCFullYear()) * 12 +
+      (endDate.getUTCMonth() - startDate.getUTCMonth());
+    if (months >= 1) {
+      return { startDate: addMonths(startDate, -months), endDate: addMonths(endDate, -months) };
+    }
+  }
+  const span = endDate.getTime() - startDate.getTime();
+  return { startDate: new Date(startDate.getTime() - span), endDate: new Date(startDate.getTime()) };
+}
+
 router.get("/summary", async (req, res) => {
   const month = String(req.query.month || new Date().toISOString().slice(0, 7));
   const [year, mon] = month.split("-").map(Number);
@@ -102,6 +130,26 @@ router.get("/income-spending", async (req, res) => {
       orderBy: { date: "asc" },
     });
 
+    // byMonth only ever covers the selected range, so looking at a single
+    // month produced exactly one bucket — and the client hides its charts
+    // below two and its comparison below two. On the default view (Month)
+    // that meant no trend and no "vs last month" at all, which is the most
+    // useful thing this page could tell you.
+    //
+    // These two are computed outside the selected range so a single-month
+    // view still has something to compare against and plot.
+    const previousRange = previousPeriod(startDate, endDate);
+    const [previousTx, trendTx] = await Promise.all([
+      prisma.transaction.findMany({
+        where: { date: { gte: previousRange.startDate, lt: previousRange.endDate } },
+        select: { amount: true, kind: true },
+      }),
+      prisma.transaction.findMany({
+        where: { date: { gte: addMonths(endDate, -TREND_MONTHS), lt: endDate } },
+        select: { amount: true, kind: true, date: true },
+      }),
+    ]);
+
     // Split on "kind", not on sign. Splitting on sign made every refund look
     // like income; a negative expense is a refund and belongs with expenses so
     // it nets against the category it came back from. Transfers are excluded
@@ -149,6 +197,28 @@ router.get("/income-spending", async (req, res) => {
       }
     }
 
+    const previousIncome = previousTx.filter((t) => t.kind === "income").reduce((s, t) => s - t.amount, 0);
+    const previousExpenses = previousTx.filter((t) => t.kind === "expense").reduce((s, t) => s + t.amount, 0);
+
+    // Trailing months, so the charts have something to draw even when the
+    // selected range is a single month.
+    const trendBuckets: Record<string, { month: string; income: number; expenses: number; net: number }> = {};
+    for (let i = TREND_MONTHS - 1; i >= 0; i--) {
+      // Every month in the window is seeded, so a month with no activity shows
+      // as a zero rather than silently closing the gap between its neighbours.
+      const key = addMonths(endDate, -i - 1).toISOString().slice(0, 7);
+      trendBuckets[key] = { month: key, income: 0, expenses: 0, net: 0 };
+    }
+    for (const tx of trendTx) {
+      if (tx.kind === "transfer") continue;
+      const key = tx.date.toISOString().slice(0, 7);
+      const bucket = trendBuckets[key];
+      if (!bucket) continue;
+      if (tx.kind === "income") bucket.income -= tx.amount;
+      else bucket.expenses += tx.amount;
+      bucket.net = bucket.income - bucket.expenses;
+    }
+
     res.json({
       startDate,
       endDate,
@@ -158,6 +228,17 @@ router.get("/income-spending", async (req, res) => {
       incomeByCategory: Object.values(incomeByCategory).sort((a, b) => b.total - a.total),
       expensesByCategory: Object.values(expensesByCategory).sort((a, b) => b.total - a.total),
       byMonth: Object.values(byMonth).sort((a, b) => a.month.localeCompare(b.month)),
+      // The equivalent stretch immediately before the selected one, so "this
+      // month vs last" works without the client having to make a second call
+      // and guess at what "last" means.
+      previous: {
+        startDate: previousRange.startDate,
+        endDate: previousRange.endDate,
+        totalIncome: previousIncome,
+        totalExpenses: previousExpenses,
+        netIncome: previousIncome - previousExpenses,
+      },
+      trend: Object.values(trendBuckets).sort((a, b) => a.month.localeCompare(b.month)),
     });
   } catch (err: any) {
     console.error(err);

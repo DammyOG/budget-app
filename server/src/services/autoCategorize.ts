@@ -1,5 +1,7 @@
 import { prisma } from "../db";
 import { kindForCategory } from "./transactionKind";
+import { AUTO_APPLY_CONFIDENCE, predict, trainModel, type TrainedModel } from "./classifier";
+import { findRuleFor } from "./categorizationLearning";
 
 // Auto-categorization rules based on transaction name patterns
 // Rules are evaluated in order, first match wins
@@ -155,7 +157,13 @@ async function applyCategory(
   });
 }
 
-export async function autoCategorizeTransaction(transactionId: string, transactionName: string) {
+export async function autoCategorizeTransaction(
+  transactionId: string,
+  transactionName: string,
+  // Passed in by autoCategorizeAll so the model is trained once for the whole
+  // run rather than re-trained per transaction.
+  model?: TrainedModel | null
+) {
   // Get the transaction to check account type
   const transaction = await prisma.transaction.findUnique({
     where: { id: transactionId },
@@ -181,18 +189,16 @@ export async function autoCategorizeTransaction(transactionId: string, transacti
     return null;
   }
 
-  // Check custom user-defined rules first (learned from user feedback)
-  const customRule = await prisma.categorizationRule.findFirst({
-    where: { pattern: transactionName },
-    include: { category: true },
-  });
-
-  if (customRule) {
-    await applyCategory(transactionId, customRule.categoryId, transaction.kindLocked);
-    return customRule.category.name;
+  // 1. What the user taught, matched on normalized merchant so one answer
+  //    covers every charge from that shop. Their answer outranks everything.
+  const learned = await findRuleFor(transactionName);
+  if (learned) {
+    await applyCategory(transactionId, learned.categoryId, transaction.kindLocked);
+    return learned.category.name;
   }
 
-  // Find matching category from predefined rules
+  // 2. Built-in merchant rules: broad knowledge of well-known chains, useful
+  //    before there's any history to learn from.
   for (const rule of CATEGORIZATION_RULES) {
     if (rule.pattern.test(transactionName)) {
       const category = await prisma.category.findFirst({
@@ -206,35 +212,62 @@ export async function autoCategorizeTransaction(transactionId: string, transacti
     }
   }
 
+  // 3. The model trained on the user's own categorizations. This is what
+  //    stops an unknown merchant from sitting uncategorized forever just
+  //    because nobody wrote a regex for it. Only applied when it's confident;
+  //    anything shakier is offered on the teach screen instead of being
+  //    written into the ledger behind the user's back.
+  if (model) {
+    const guess = predict(model, transactionName);
+    if (guess && guess.confidence >= AUTO_APPLY_CONFIDENCE) {
+      await applyCategory(transactionId, guess.categoryId, transaction.kindLocked);
+      return guess.categoryName;
+    }
+  }
+
   return null;
 }
 
 export async function autoCategorizeAll() {
-  // Get ALL transactions (not just uncategorized) so we can fix wrongly categorized ones
-  const allTransactions = await prisma.transaction.findMany({
-    include: { category: true },
-  });
+  // Trained once per run, not per transaction — retraining inside the loop
+  // would re-read the whole ledger for every row.
+  const model = await trainModel();
+
+  // Everything, not just the uncategorized ones, so wrong categories get fixed
+  // rather than frozen in place.
+  const allTransactions = await prisma.transaction.findMany({ include: { category: true } });
 
   let categorized = 0;
   let recategorized = 0;
 
   for (const tx of allTransactions) {
     const oldCategory = tx.category?.name;
-    const result = await autoCategorizeTransaction(tx.id, tx.name);
+    const result = await autoCategorizeTransaction(tx.id, tx.name, model);
 
     if (result) {
       if (oldCategory && oldCategory !== result) {
-        recategorized++; // Changed from one category to another
+        recategorized++;
       } else if (!oldCategory) {
-        categorized++; // Was uncategorized, now categorized
+        categorized++;
       }
     }
   }
+
+  // Reported so "did it actually do everything?" has an answer. Transfers are
+  // excluded from the denominator: they carry no category by design, so
+  // counting them would cap coverage below 100% forever.
+  const [remaining, categorizable] = await Promise.all([
+    prisma.transaction.count({ where: { categoryId: null, kind: { not: "transfer" } } }),
+    prisma.transaction.count({ where: { kind: { not: "transfer" } } }),
+  ]);
 
   return {
     total: allTransactions.length,
     categorized,
     recategorized,
-    processed: categorized + recategorized
+    processed: categorized + recategorized,
+    remaining,
+    coverage: categorizable > 0 ? (categorizable - remaining) / categorizable : 1,
+    modelTrainedOn: model.totalDocs,
   };
 }

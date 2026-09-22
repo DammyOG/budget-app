@@ -76,6 +76,27 @@ export interface AttentionCounts {
   total: number;
 }
 
+export interface TeachMerchant {
+  merchantKey: string;
+  sampleName: string;
+  count: number;
+  totalAmount: number;
+  lastDate: string;
+  accountName: string;
+  transactionIds: string[];
+  // What the model trained on your own answers thinks this is, if it has
+  // enough history to have an opinion.
+  guess: { categoryId: string; categoryName: string; confidence: number; reason: string } | null;
+}
+
+export interface TeachQueue {
+  merchants: TeachMerchant[];
+  uncategorizedTransactions: number;
+  uncategorizedMerchants: number;
+  coverage: number;
+  modelTrainedOn: number;
+}
+
 export interface Budget {
   id: string;
   categoryId: string;
@@ -97,6 +118,13 @@ export interface DashboardSummary {
   budgetVsActual: { categoryId: string; categoryName: string; budgeted: number; spent: number }[];
 }
 
+export interface MonthTotals {
+  month: string;
+  income: number;
+  expenses: number;
+  net: number;
+}
+
 export interface IncomeSpendingSummary {
   startDate: string;
   endDate: string;
@@ -105,7 +133,20 @@ export interface IncomeSpendingSummary {
   netIncome: number;
   incomeByCategory: { categoryId: string | null; name: string; total: number }[];
   expensesByCategory: { categoryId: string | null; name: string; total: number }[];
-  byMonth: { month: string; income: number; expenses: number; net: number }[];
+  byMonth: MonthTotals[];
+  // The equivalent stretch immediately before the selected one. byMonth only
+  // covers the selected range, so on a single month it has one entry and can't
+  // answer "how does this compare to last month" at all.
+  previous: {
+    startDate: string;
+    endDate: string;
+    totalIncome: number;
+    totalExpenses: number;
+    netIncome: number;
+  };
+  // Trailing 12 months regardless of the selected range, so the charts have
+  // something to plot even when looking at one month.
+  trend: MonthTotals[];
 }
 
 export interface TransferPair {
@@ -185,9 +226,25 @@ export const api = {
   updateTransaction: (id: string, data: Partial<Transaction>) =>
     request<Transaction>(`/transactions/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   deleteTransaction: (id: string) => request(`/transactions/${id}`, { method: "DELETE" }),
-  autoCategorizeAll: () => request<{ total: number; categorized: number; recategorized: number; processed: number }>("/transactions/auto-categorize", { method: "POST" }),
+  autoCategorizeAll: () =>
+    request<{
+      total: number;
+      categorized: number;
+      recategorized: number;
+      processed: number;
+      remaining: number;
+      coverage: number;
+      modelTrainedOn: number;
+    }>("/transactions/auto-categorize", { method: "POST" }),
   categorizeAllSimilar: (transactionName: string, categoryId: string) =>
     request<{ count: number }>("/transactions/categorize-similar", {
+      method: "POST",
+      body: JSON.stringify({ transactionName, categoryId }),
+    }),
+
+  getTeachQueue: (limit = 10) => request<TeachQueue>(`/transactions/teach?limit=${limit}`),
+  teachMerchant: (transactionName: string, categoryId: string) =>
+    request<{ applied: number }>("/transactions/teach", {
       method: "POST",
       body: JSON.stringify({ transactionName, categoryId }),
     }),

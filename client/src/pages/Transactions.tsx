@@ -128,7 +128,7 @@ function EmptyTransactions({ accounts, onSynced }: { accounts: Account[]; onSync
         <p className="font-medium text-slate-700">No accounts yet</p>
         <p className="mx-auto mt-1 max-w-xs">
           Link a bank on the{" "}
-          <Link to="/accounts" className="font-medium text-indigo-600">
+          <Link to="/accounts" className="inline-flex min-h-[40px] items-center font-medium text-indigo-600">
             Accounts
           </Link>{" "}
           page, or add one by hand.

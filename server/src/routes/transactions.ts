@@ -270,28 +270,30 @@ router.post("/auto-categorize", async (req, res) => {
   }
 });
 
-// Get categorization suggestions
-router.get("/suggestions", async (req, res) => {
-  try {
-    const { getCategorizationSuggestions } = await import("../services/categorizationLearning");
-    const suggestions = await getCategorizationSuggestions();
-    res.json(suggestions);
-  } catch (err: any) {
-    console.error(err);
-    res.status(500).json({ error: "Failed to get suggestions" });
+// The merchants worth asking about, most impactful first, each with the
+// model's own guess. Answering one of these applies to every matching
+// transaction rather than just the row in front of you.
+router.get("/teach", async (req, res) => {
+  const { getTeachQueue } = await import("../services/teach");
+  const limit = req.query.limit ? Number(req.query.limit) : 10;
+  res.json(await getTeachQueue(Math.min(Math.max(limit, 1), 50)));
+});
+
+// Answer one merchant: records the rule and back-fills the ledger.
+router.post("/teach", async (req, res) => {
+  const { transactionName, categoryId } = req.body;
+  if (!transactionName || !categoryId) {
+    return res.status(400).json({ error: "transactionName and categoryId are required" });
   }
+  const { learnFromUserCategorization } = await import("../services/categorizationLearning");
+  const { applied } = await learnFromUserCategorization(transactionName, categoryId);
+  res.json({ applied });
 });
 
 // Get similar transactions for a given transaction name
 router.get("/similar/:name", async (req, res) => {
-  try {
-    const { getSimilarTransactions } = await import("../services/categorizationLearning");
-    const similar = await getSimilarTransactions(decodeURIComponent(req.params.name), "");
-    res.json(similar);
-  } catch (err: any) {
-    console.error(err);
-    res.status(500).json({ error: "Failed to get similar transactions" });
-  }
+  const { getSimilarTransactions } = await import("../services/categorizationLearning");
+  res.json(await getSimilarTransactions(decodeURIComponent(req.params.name)));
 });
 
 // Categorize all similar transactions

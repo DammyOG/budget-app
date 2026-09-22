@@ -122,15 +122,21 @@ model Budget {
 }
 
 model CategorizationRule {
-  id         String   @id @default(cuid())
-  pattern    String   @unique // Transaction name pattern to match
-  categoryId String
-  confidence Int      @default(100) // 0-100, increased when user confirms, decreased when rejected
-  timesUsed  Int      @default(0)   // Track how often this rule is used
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id      String @id @default(cuid())
+  pattern String @unique // The raw descriptor the rule was taught from, kept for display
+  // What the rule actually matches on. Keying off the raw descriptor meant a
+  // rule could only ever match the one transaction it was learned from, since
+  // every charge carries its own order id — teaching the app about one Amazon
+  // charge taught it nothing about the next.
+  merchantKey String  @unique
+  categoryId  String
+  confidence  Int      @default(100) // 0-100, raised when confirmed, lowered when rejected
+  timesUsed   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
 
   @@index([pattern])
+  @@index([merchantKey])
 }

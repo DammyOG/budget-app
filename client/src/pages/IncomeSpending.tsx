@@ -157,6 +157,21 @@ export default function IncomeSpending() {
     });
   }
 
+  // The charts plot the trailing 12 months, not just the selected range.
+  // Driving them from the range meant that on the default Month view there
+  // was exactly one data point, so every chart was hidden and the page looked
+  // like it simply didn't work.
+  const chartData = data?.trend ?? data?.byMonth ?? [];
+
+  // What "previous" means follows the selected range: the month before, the
+  // year before, or the equivalent stretch before a custom range.
+  const comparisonLabel =
+    dateRange === "month"
+      ? `vs ${data?.previous ? formatMonth(data.previous.startDate.slice(0, 7)) : "last month"}`
+      : dateRange === "year"
+      ? `vs ${parseInt(selectedYear) - 1}`
+      : "vs the period before";
+
   async function toggleCategory(categoryId: string | null, isIncome: boolean) {
     const key = `${isIncome ? "income" : "expense"}-${categoryId || "uncategorized"}`;
     const newExpanded = new Set(expandedCategories);
@@ -406,7 +421,7 @@ export default function IncomeSpending() {
 
       {/* One chart at a time. Four stacked 300px charts is 1,200px of
           scrolling on a phone, and you can only look at one anyway. */}
-      {data.byMonth && data.byMonth.length > 1 && (
+      {chartData.length > 1 && (
         <Card>
           <Segmented
             className="mb-3"
@@ -421,7 +436,7 @@ export default function IncomeSpending() {
           />
           {chartView === "trend" && (
             <ResponsiveContainer width="100%" height={240}>
-              <AreaChart data={data.byMonth}>
+              <AreaChart data={chartData}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis
                   dataKey="month"
@@ -461,7 +476,7 @@ export default function IncomeSpending() {
 
           {chartView === "compare" && (
             <ResponsiveContainer width="100%" height={240}>
-              <BarChart data={data.byMonth}>
+              <BarChart data={chartData}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis
                   dataKey="month"
@@ -486,7 +501,7 @@ export default function IncomeSpending() {
 
           {chartView === "net" && (
             <ResponsiveContainer width="100%" height={240}>
-              <LineChart data={data.byMonth}>
+              <LineChart data={chartData}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis
                   dataKey="month"
@@ -550,19 +565,24 @@ export default function IncomeSpending() {
       {/* Three gradient cards, each with its own heading, repeated numbers
           already shown above — about 450px of phone screen to say "up or
           down since last month". One row per metric says the same thing. */}
-      {data.byMonth && data.byMonth.length >= 2 && (
+      {data.previous && (
         <Card>
           {(() => {
-            const cur = data.byMonth[data.byMonth.length - 1];
-            const prev = data.byMonth[data.byMonth.length - 2];
+            const prev = data.previous;
             const rows = [
-              { label: "Income", now: cur.income, was: prev.income, upIsGood: true },
-              { label: "Expenses", now: cur.expenses, was: prev.expenses, upIsGood: false },
-              { label: "Net", now: cur.net, was: prev.net, upIsGood: true },
+              { label: "Income", now: data.totalIncome, was: prev.totalIncome, upIsGood: true },
+              { label: "Expenses", now: data.totalExpenses, was: prev.totalExpenses, upIsGood: false },
+              { label: "Net", now: data.netIncome, was: prev.netIncome, upIsGood: true },
             ];
+            const hadActivity = prev.totalIncome !== 0 || prev.totalExpenses !== 0;
             return (
               <>
-                <SectionTitle>vs {formatMonth(prev.month)}</SectionTitle>
+                <SectionTitle>{comparisonLabel}</SectionTitle>
+                {!hadActivity && (
+                  <p className="-mt-1 mb-2 text-xs text-slate-400">
+                    Nothing recorded in that period, so the changes below are against zero.
+                  </p>
+                )}
                 <div className="divide-y">
                   {rows.map((r) => {
                     const change = r.now - r.was;

@@ -52,6 +52,13 @@ async function seedCategories() {
 async function main() {
   await seedCategories();
 
+  // Rules taught before rules were keyed by merchant still hold a raw bank
+  // descriptor. Rewriting them here rather than in the migration because
+  // normalization is code, not SQL. Idempotent, so it's a no-op once done.
+  const { normalizeExistingRules } = await import("./services/categorizationLearning");
+  const rewritten = await normalizeExistingRules();
+  if (rewritten > 0) console.log(`Normalized ${rewritten} categorization rule(s) to merchant keys`);
+
   const app = express();
   app.use(cors({ origin: process.env.CLIENT_ORIGIN ? process.env.CLIENT_ORIGIN.split(",") : true }));
   app.use(express.json());

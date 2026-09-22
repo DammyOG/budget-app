@@ -1,171 +1,125 @@
 import { prisma } from "../db";
+import { merchantKey } from "./merchantKey";
+import { kindForCategory } from "./transactionKind";
 
-// Learn from user feedback - when user manually categorizes a transaction
-export async function learnFromUserCategorization(transactionName: string, categoryId: string) {
-  // Check if a rule already exists for this exact transaction name
-  const existingRule = await prisma.categorizationRule.findUnique({
-    where: { pattern: transactionName },
-  });
+// Rules are keyed by normalized merchant, not by the raw descriptor. Keying by
+// the raw string meant a rule matched exactly one transaction — the one it was
+// learned from — because every charge carries its own order id. One answer now
+// covers every charge from that merchant, past and future.
 
-  if (existingRule) {
-    // If it's the same category, increase confidence
-    if (existingRule.categoryId === categoryId) {
-      await prisma.categorizationRule.update({
-        where: { id: existingRule.id },
-        data: {
-          confidence: Math.min(100, existingRule.confidence + 10),
-          timesUsed: existingRule.timesUsed + 1,
-        },
-      });
-    } else {
-      // User changed category, update the rule
-      await prisma.categorizationRule.update({
-        where: { id: existingRule.id },
-        data: {
-          categoryId,
-          confidence: 80, // Reset confidence to 80 when changed
-          timesUsed: existingRule.timesUsed + 1,
-        },
-      });
-    }
+// Teaching the app about a merchant also applies it to matching transactions
+// that are already in the ledger, so an answer pays off immediately rather
+// than only affecting whatever syncs next.
+export async function learnFromUserCategorization(
+  transactionName: string,
+  categoryId: string
+): Promise<{ applied: number }> {
+  const key = merchantKey(transactionName);
+  if (!key) return { applied: 0 };
+
+  const existing = await prisma.categorizationRule.findUnique({ where: { merchantKey: key } });
+
+  if (existing) {
+    await prisma.categorizationRule.update({
+      where: { id: existing.id },
+      data:
+        existing.categoryId === categoryId
+          ? { confidence: Math.min(100, existing.confidence + 10), timesUsed: existing.timesUsed + 1 }
+          : // Corrected to a different category: trust the correction, but not
+            // as much as a fresh answer, since this merchant has now been
+            // answered two different ways.
+            { categoryId, confidence: 80, timesUsed: existing.timesUsed + 1 },
+    });
   } else {
-    // Create new rule
     await prisma.categorizationRule.create({
-      data: {
-        pattern: transactionName,
-        categoryId,
-        confidence: 100,
-        timesUsed: 1,
-      },
+      data: { pattern: transactionName, merchantKey: key, categoryId, confidence: 100, timesUsed: 1 },
     });
   }
+
+  const applied = await applyRuleToLedger(key, categoryId);
+  return { applied };
 }
 
-// Get categorization suggestions for uncategorized transactions
-export async function getCategorizationSuggestions() {
-  const uncategorized = await prisma.transaction.findMany({
+// Categorize every uncategorized transaction whose merchant matches. Scanning
+// in JS rather than SQL because the key is computed, not stored — the ledger
+// for one person is small enough that this is not worth denormalizing.
+export async function applyRuleToLedger(key: string, categoryId: string): Promise<number> {
+  const candidates = await prisma.transaction.findMany({
+    where: { categoryId: null, kind: { not: "transfer" } },
+    select: { id: true, name: true, kindLocked: true },
+  });
+
+  const matching = candidates.filter((t) => merchantKey(t.name) === key);
+  if (matching.length === 0) return 0;
+
+  const kind = await kindForCategory(categoryId);
+  const lockedIds = matching.filter((t) => t.kindLocked).map((t) => t.id);
+  const unlockedIds = matching.filter((t) => !t.kindLocked).map((t) => t.id);
+
+  // An explicitly set kind is the user's decision and outranks whatever the
+  // category implies, so those rows get the category without the kind.
+  if (lockedIds.length) {
+    await prisma.transaction.updateMany({ where: { id: { in: lockedIds } }, data: { categoryId } });
+  }
+  if (unlockedIds.length) {
+    await prisma.transaction.updateMany({ where: { id: { in: unlockedIds } }, data: { categoryId, kind } });
+  }
+
+  return matching.length;
+}
+
+// Rules written before rules were keyed by merchant hold a raw descriptor in
+// merchantKey (the migration seeds it from pattern). Rewriting them here
+// rather than in SQL because normalization is code, not a query.
+export async function normalizeExistingRules(): Promise<number> {
+  const rules = await prisma.categorizationRule.findMany({
+    orderBy: [{ timesUsed: "desc" }, { confidence: "desc" }],
+  });
+
+  const seen = new Map<string, string>(); // normalized key -> winning rule id
+  let rewritten = 0;
+
+  for (const rule of rules) {
+    const key = merchantKey(rule.pattern);
+    if (!key || key === rule.merchantKey) {
+      seen.set(rule.merchantKey, rule.id);
+      continue;
+    }
+
+    // Two raw patterns can normalize to the same merchant. The list is ordered
+    // by how much the rule has been used, so the first one wins and the
+    // duplicate is dropped rather than colliding on the unique index.
+    if (seen.has(key)) {
+      await prisma.categorizationRule.delete({ where: { id: rule.id } });
+      continue;
+    }
+
+    await prisma.categorizationRule.update({ where: { id: rule.id }, data: { merchantKey: key } });
+    seen.set(key, rule.id);
+    rewritten++;
+  }
+
+  return rewritten;
+}
+
+export async function findRuleFor(transactionName: string) {
+  const key = merchantKey(transactionName);
+  if (!key) return null;
+  return prisma.categorizationRule.findUnique({ where: { merchantKey: key }, include: { category: true } });
+}
+
+// Same merchant, not the same descriptor — "SQ *BLUE BOTTLE 8871" and
+// "SQ *BLUE BOTTLE 2290" are the same shop.
+export async function getSimilarTransactions(transactionName: string) {
+  const key = merchantKey(transactionName);
+  const candidates = await prisma.transaction.findMany({
     where: { categoryId: null },
     include: { account: true },
-    orderBy: { date: "desc" },
-    take: 50, // Get most recent 50 uncategorized
   });
-
-  const suggestions: Array<{
-    transactionId: string;
-    transactionName: string;
-    amount: number;
-    date: Date;
-    suggestedCategory: { id: string; name: string } | null;
-    confidence: number;
-  }> = [];
-
-  for (const tx of uncategorized) {
-    // Check if we have a learned rule for this transaction name
-    const rule = await prisma.categorizationRule.findFirst({
-      where: { pattern: tx.name },
-      include: { category: true },
-    });
-
-    if (rule && rule.confidence >= 60) {
-      suggestions.push({
-        transactionId: tx.id,
-        transactionName: tx.name,
-        amount: tx.amount,
-        date: tx.date,
-        suggestedCategory: {
-          id: rule.category.id,
-          name: rule.category.name,
-        },
-        confidence: rule.confidence,
-      });
-    } else {
-      // No learned rule, add with null suggestion
-      suggestions.push({
-        transactionId: tx.id,
-        transactionName: tx.name,
-        amount: tx.amount,
-        date: tx.date,
-        suggestedCategory: null,
-        confidence: 0,
-      });
-    }
-  }
-
-  return suggestions;
+  return candidates.filter((t) => merchantKey(t.name) === key);
 }
 
-// Accept a categorization suggestion
-export async function acceptSuggestion(transactionId: string, categoryId: string, transactionName: string) {
-  // Update the transaction
-  await prisma.transaction.update({
-    where: { id: transactionId },
-    data: { categoryId },
-  });
-
-  // Learn from this acceptance
-  await learnFromUserCategorization(transactionName, categoryId);
-
-  return { success: true };
-}
-
-// Reject a suggestion and optionally provide correct category
-export async function rejectSuggestion(
-  transactionId: string,
-  suggestedCategoryId: string,
-  correctCategoryId: string | null,
-  transactionName: string
-) {
-  // Decrease confidence in the wrong suggestion
-  const rule = await prisma.categorizationRule.findFirst({
-    where: { pattern: transactionName, categoryId: suggestedCategoryId },
-  });
-
-  if (rule) {
-    await prisma.categorizationRule.update({
-      where: { id: rule.id },
-      data: { confidence: Math.max(0, rule.confidence - 20) },
-    });
-  }
-
-  // If user provided correct category, learn from it
-  if (correctCategoryId) {
-    await prisma.transaction.update({
-      where: { id: transactionId },
-      data: { categoryId: correctCategoryId },
-    });
-    await learnFromUserCategorization(transactionName, correctCategoryId);
-  }
-
-  return { success: true };
-}
-
-// Apply similar transactions - when user categorizes one, offer to categorize similar ones
-export async function getSimilarTransactions(transactionName: string, categoryId: string) {
-  // Find transactions with the same name that are uncategorized
-  const similar = await prisma.transaction.findMany({
-    where: {
-      name: transactionName,
-      categoryId: null,
-    },
-    include: { account: true },
-  });
-
-  return similar;
-}
-
-// Apply category to all similar transactions
 export async function categorizeAllSimilar(transactionName: string, categoryId: string) {
-  // Update all uncategorized transactions with the same name
-  const result = await prisma.transaction.updateMany({
-    where: {
-      name: transactionName,
-      categoryId: null,
-    },
-    data: { categoryId },
-  });
-
-  // Learn from this
-  await learnFromUserCategorization(transactionName, categoryId);
-
-  return { count: result.count };
+  const { applied } = await learnFromUserCategorization(transactionName, categoryId);
+  return { count: applied };
 }
