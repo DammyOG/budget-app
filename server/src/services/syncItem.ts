@@ -17,6 +17,9 @@ export interface ItemSyncResult {
 // the PlaidItem, so lastSyncedAt / needsReauth are always accurate for
 // whoever's asking (dashboard, accounts list) without them re-deriving it.
 export async function syncItem(plaidItemDbId: string): Promise<ItemSyncResult> {
+  // Captured before anything is written, so reconcile can bound its work to
+  // the rows this sync creates.
+  const syncStartedAt = new Date();
   try {
     const accounts = await syncAccountsForItem(plaidItemDbId);
 
@@ -40,7 +43,7 @@ export async function syncItem(plaidItemDbId: string): Promise<ItemSyncResult> {
     if (transactions) {
       try {
         const { reconcile } = await import("./reconcile");
-        await reconcile();
+        await reconcile(syncStartedAt);
       } catch (reconcileErr: any) {
         console.warn("Post-sync reconcile failed for item", plaidItemDbId, reconcileErr.message);
       }

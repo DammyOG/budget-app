@@ -6,7 +6,6 @@ import {
   autoLinkTransfers,
   TransferLinkError,
 } from "../services/detectTransfers";
-import { fixZelleTransfers } from "../services/fixZelleTransfers";
 
 const router = Router();
 
@@ -70,25 +69,16 @@ router.post("/unlink", async (req, res) => {
   }
 });
 
-// Auto-link high-confidence transfers
+// Auto-link high-confidence transfers.
+//
+// This used to run a separate Zelle-specific pass first, which re-implemented
+// pairing with its own thresholds and its own copy of the linking logic. Now
+// that detection considers every unpaired transaction rather than only the
+// uncategorized ones, the general detector matches Zelle pairs at high
+// confidence on its own, and the second implementation was only another place
+// for the two to disagree.
 router.post("/auto-link", async (req, res) => {
-  try {
-    // First, fix Zelle transfers that are incorrectly categorized
-    const zelleResult = await fixZelleTransfers();
-
-    // Then, auto-link other high-confidence transfers
-    const result = await autoLinkTransfers();
-
-    res.json({
-      ...result,
-      zelleFixed: zelleResult.fixed,
-      total: result.total + zelleResult.fixed,
-      linked: result.linked + zelleResult.fixed
-    });
-  } catch (err: any) {
-    console.error(err);
-    res.status(500).json({ error: "Failed to auto-link transfers" });
-  }
+  res.json(await autoLinkTransfers());
 });
 
 export default router;

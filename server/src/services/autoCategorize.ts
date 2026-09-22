@@ -141,6 +141,21 @@ const CATEGORIZATION_RULES: { pattern: RegExp; category: string }[] = [
   { pattern: /fee|charge|service charge|atm|overdraft|late fee|penalty/i, category: "Fees & Charges" },
 ];
 
+// The rules table names categories, so matching a rule needs a name-to-id
+// lookup. Doing it per match meant a query for every rule hit across the whole
+// ledger; there are only a couple of dozen categories and they barely change,
+// so the map is built once and reused for the rest of the request.
+let categoryCache: { at: number; byName: Map<string, { id: string; name: string }> } | null = null;
+const CATEGORY_CACHE_MS = 5_000;
+
+async function categoriesByName() {
+  if (categoryCache && Date.now() - categoryCache.at < CATEGORY_CACHE_MS) return categoryCache.byName;
+  const rows = await prisma.category.findMany({ select: { id: true, name: true } });
+  const byName = new Map(rows.map((c) => [c.name, c]));
+  categoryCache = { at: Date.now(), byName };
+  return byName;
+}
+
 // Applies a category and keeps "kind" consistent with it, unless the user has
 // overridden the kind by hand — in which case their choice wins.
 async function applyCategory(
@@ -203,12 +218,10 @@ export async function autoCategorizeTransaction(
 
   // 2. Built-in merchant rules: broad knowledge of well-known chains, useful
   //    before there's any history to learn from.
+  const categories = await categoriesByName();
   for (const rule of CATEGORIZATION_RULES) {
     if (rule.pattern.test(transactionName)) {
-      const category = await prisma.category.findFirst({
-        where: { name: rule.category },
-      });
-
+      const category = categories.get(rule.category);
       if (category) {
         await applyCategory(transactionId, category.id, transaction.kindLocked);
         return category.name;
@@ -232,14 +245,25 @@ export async function autoCategorizeTransaction(
   return null;
 }
 
-export async function autoCategorizeAll() {
+// `since` bounds the work to transactions that arrived after that moment.
+// A sync only needs to categorize what it just pulled in; re-reading and
+// re-deciding the entire ledger on every sync is work that grows with history
+// forever, for a result that can't change for rows nothing has touched.
+// Called with no argument (the explicit "clean up" action) it still does
+// everything, because that's what the user is asking for.
+export async function autoCategorizeAll(since?: Date) {
   // Trained once per run, not per transaction — retraining inside the loop
-  // would re-read the whole ledger for every row.
+  // would re-read the whole ledger for every row. Training always reads the
+  // full history: the model is only as good as everything it has seen, even
+  // when only a handful of new rows are being classified.
   const model = await trainModel();
 
-  // Everything, not just the uncategorized ones, so wrong categories get fixed
-  // rather than frozen in place.
-  const allTransactions = await prisma.transaction.findMany({ include: { category: true } });
+  // Everything in scope, not just the uncategorized ones, so wrong categories
+  // get fixed rather than frozen in place.
+  const allTransactions = await prisma.transaction.findMany({
+    where: since ? { createdAt: { gte: since } } : {},
+    include: { category: true },
+  });
 
   let categorized = 0;
   let recategorized = 0;

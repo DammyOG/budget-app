@@ -10,13 +10,19 @@ import { autoLinkTransfers } from "./detectTransfers";
 // to press a button on a particular page. Until they did, every transfer
 // between their own accounts counted twice — once as income on the receiving
 // side and once as spending on the sending side.
-export async function reconcile() {
+//
+// `since` bounds the categorization pass to rows that arrived after that
+// moment, so a sync's cost tracks what it pulled in rather than how much
+// history has accumulated. Pairing is already bounded to a rolling window, and
+// a new transaction's counterpart may be an older one, so that pass is not
+// narrowed further.
+export async function reconcile(since?: Date) {
   // Credit-card "payment thank you" rows first: they're transfers wearing a
   // description that reads like income.
   await fixPaymentThankYou();
 
   // Then categorize, which is also what trains and applies the model.
-  const categorization = await autoCategorizeAll();
+  const categorization = await autoCategorizeAll(since);
 
   // Pairing last. Detection looks at every unpaired transaction regardless of
   // category, so it sees the rows categorization just labelled — and linking
