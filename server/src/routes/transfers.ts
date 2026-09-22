@@ -1,5 +1,11 @@
 import { Router } from "express";
-import { detectPotentialTransfers, linkTransferPair, unlinkTransferPair, autoLinkTransfers } from "../services/detectTransfers";
+import {
+  detectPotentialTransfers,
+  linkTransferPair,
+  unlinkTransferPair,
+  autoLinkTransfers,
+  TransferLinkError,
+} from "../services/detectTransfers";
 import { fixZelleTransfers } from "../services/fixZelleTransfers";
 
 const router = Router();
@@ -15,6 +21,22 @@ router.get("/detect", async (req, res) => {
   }
 });
 
+// Everything still unpaired, split by direction, for matching by hand. The
+// detector only proposes pairs whose amounts match to the cent and whose dates
+// are within a few days; a transfer that lost a wire fee, or arrived a week
+// later, never appears there and has to be matchable manually or it keeps
+// counting as both income and spending forever.
+router.get("/unmatched", async (req, res) => {
+  const { getUnmatchedFlows } = await import("../services/detectTransfers");
+  res.json(await getUnmatchedFlows());
+});
+
+// Pairs already linked, so a wrong match can be found and undone.
+router.get("/linked", async (req, res) => {
+  const { listLinkedPairs } = await import("../services/detectTransfers");
+  res.json(await listLinkedPairs());
+});
+
 // Link two transactions as a transfer pair
 router.post("/link", async (req, res) => {
   try {
@@ -25,6 +47,9 @@ router.post("/link", async (req, res) => {
     await linkTransferPair(transaction1Id, transaction2Id);
     res.json({ success: true });
   } catch (err: any) {
+    // A rejected match is the user picking two rows that can't be a pair, not
+    // a server fault — it should say why rather than "something went wrong".
+    if (err instanceof TransferLinkError) return res.status(400).json({ error: err.message });
     console.error(err);
     res.status(500).json({ error: "Failed to link transfer pair" });
   }

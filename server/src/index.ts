@@ -13,7 +13,11 @@ import dashboardRoutes from "./routes/dashboard";
 import transfersRoutes from "./routes/transfers";
 import recurringRoutes from "./routes/recurring";
 
-const DEFAULT_CATEGORIES = [
+// isTransfer marks money moving between the user's own accounts: neither
+// income nor spending, and excluded from every total and category breakdown.
+// Zelle is deliberately not marked — unpaired it's a real payment to a
+// person; it becomes a transfer only once its two legs are matched.
+const DEFAULT_CATEGORIES: { name: string; isIncome: boolean; isTransfer?: boolean }[] = [
   { name: "Groceries", isIncome: false },
   { name: "Dining & Restaurants", isIncome: false },
   { name: "Rent & Mortgage", isIncome: false },
@@ -29,7 +33,7 @@ const DEFAULT_CATEGORIES = [
   { name: "Education", isIncome: false },
   { name: "Gifts & Donations", isIncome: false },
   { name: "Fees & Charges", isIncome: false },
-  { name: "Transfer", isIncome: false },
+  { name: "Transfer", isIncome: false, isTransfer: true },
   { name: "Zelle Sent", isIncome: false },
   { name: "Zelle Received", isIncome: true },
   { name: "Salary", isIncome: true },
@@ -43,8 +47,8 @@ async function seedCategories() {
   for (const cat of DEFAULT_CATEGORIES) {
     await prisma.category.upsert({
       where: { name: cat.name },
-      create: { name: cat.name, isIncome: cat.isIncome },
-      update: { isIncome: cat.isIncome },
+      create: { name: cat.name, isIncome: cat.isIncome, isTransfer: !!cat.isTransfer },
+      update: { isIncome: cat.isIncome, isTransfer: !!cat.isTransfer },
     });
   }
 }

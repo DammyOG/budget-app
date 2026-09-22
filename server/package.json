@@ -16,7 +16,8 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
     "verify:merchant-key": "tsx scripts/verify-merchant-key.ts",
-    "verify:categorization": "tsx scripts/verify-categorization.ts"
+    "verify:categorization": "tsx scripts/verify-categorization.ts",
+    "verify:transfers": "tsx scripts/verify-transfers.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.20.0",

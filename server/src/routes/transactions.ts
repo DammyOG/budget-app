@@ -1,7 +1,5 @@
 import { Router } from "express";
 import { prisma } from "../db";
-import { autoCategorizeAll } from "../services/autoCategorize";
-import { fixPaymentThankYou } from "../services/fixMiscategorized";
 import { kindForCategory } from "../services/transactionKind";
 import {
   findDuplicateGroups,
@@ -256,18 +254,13 @@ router.get("/attention", async (req, res) => {
   });
 });
 
+// Categorize and pair in one pass. Pairing is included because leaving it to
+// a separate button on another page meant transfers between the user's own
+// accounts kept counting as both income and spending until they found it.
 router.post("/auto-categorize", async (req, res) => {
-  try {
-    // First, fix any miscategorized "payment thank you" type transactions
-    await fixPaymentThankYou();
-
-    // Then auto-categorize uncategorized transactions
-    const result = await autoCategorizeAll();
-    res.json(result);
-  } catch (err: any) {
-    console.error(err);
-    res.status(500).json({ error: "Failed to auto-categorize transactions" });
-  }
+  const { reconcile } = await import("../services/reconcile");
+  const { categorization, transfers } = await reconcile();
+  res.json({ ...categorization, transfersLinked: transfers.linked, transferCandidates: transfers.total });
 });
 
 // The merchants worth asking about, most impactful first, each with the

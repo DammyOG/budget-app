@@ -40,7 +40,7 @@ export async function fixZelleTransfers() {
       if (daysDiff > 3) continue;
 
       // Found a match! Link them as a transfer
-      const transferCategory = await prisma.category.findFirst({ where: { name: "Transfer" } });
+      const transferCategory = await prisma.category.findFirst({ where: { isTransfer: true } });
 
       await prisma.transaction.update({
         where: { id: sent.id },

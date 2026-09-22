@@ -30,6 +30,22 @@ export async function syncItem(plaidItemDbId: string): Promise<ItemSyncResult> {
       console.warn("Transactions sync skipped for item", plaidItemDbId, txErr.response?.data || txErr.message);
     }
 
+    // Categorize and pair what just arrived. Without this a sync left new
+    // transactions uncategorized and transfers unmatched, so every transfer
+    // between the user's own accounts counted as both income and spending
+    // until they happened to press "Clean up" on the right page.
+    //
+    // Failure here doesn't fail the sync: the transactions are already
+    // stored, and tidying can be retried.
+    if (transactions) {
+      try {
+        const { reconcile } = await import("./reconcile");
+        await reconcile();
+      } catch (reconcileErr: any) {
+        console.warn("Post-sync reconcile failed for item", plaidItemDbId, reconcileErr.message);
+      }
+    }
+
     await prisma.plaidItem.update({
       where: { id: plaidItemDbId },
       data: { lastSyncedAt: new Date(), needsReauth: false, lastSyncError: null },

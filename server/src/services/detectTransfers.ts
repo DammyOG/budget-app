@@ -1,134 +1,233 @@
 import { prisma } from "../db";
 
 interface TransferPair {
-  fromTransaction: {
-    id: string;
-    name: string;
-    amount: number;
-    date: Date;
-    accountName: string;
-  };
-  toTransaction: {
-    id: string;
-    name: string;
-    amount: number;
-    date: Date;
-    accountName: string;
-  };
+  fromTransaction: { id: string; name: string; amount: number; date: Date; accountName: string };
+  toTransaction: { id: string; name: string; amount: number; date: Date; accountName: string };
   confidence: "high" | "medium" | "low";
+  // Why it thinks so, so a suggestion can be judged rather than just trusted.
+  reason: string;
 }
 
-// Detect potential inter-account transfers
-export async function detectPotentialTransfers(): Promise<TransferPair[]> {
-  // Get all uncategorized or Transfer-categorized transactions from the last 90 days
-  const ninetyDaysAgo = new Date();
-  ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+const WINDOW_DAYS = 120;
+const MAX_DAYS_APART = 4;
+// Cents, to absorb float error on amounts read back from SQLite.
+const AMOUNT_TOLERANCE = 0.01;
 
-  const transferCategory = await prisma.category.findFirst({
-    where: { name: "Transfer" },
-  });
+function daysBetween(a: Date, b: Date): number {
+  return Math.abs(a.getTime() - b.getTime()) / 86_400_000;
+}
 
-  const transactions = await prisma.transaction.findMany({
-    where: {
-      date: { gte: ninetyDaysAgo },
-      transferPairId: null, // Not already paired
-      OR: [{ categoryId: null }, { categoryId: transferCategory?.id }],
-    },
-    include: {
-      account: { select: { id: true, name: true, institutionName: true, type: true } },
-    },
+function describeAccount(a: { institutionName: string; name: string }): string {
+  return `${a.institutionName} - ${a.name}`;
+}
+
+// Candidates are every unpaired transaction in the window, whatever category
+// they carry.
+//
+// This used to be restricted to uncategorized or "Transfer"-categorized rows,
+// which meant auto-categorization actively broke transfer detection: a Zelle
+// between your own accounts gets labelled "Zelle Sent" / "Zelle Received", and
+// those labels excluded it from the matcher forever. The pair was never found,
+// so both legs kept counting — inflating income by the amount and spending by
+// the same amount, on every single transfer.
+async function loadCandidates() {
+  const since = new Date();
+  since.setDate(since.getDate() - WINDOW_DAYS);
+
+  return prisma.transaction.findMany({
+    where: { date: { gte: since }, transferPairId: null },
+    include: { account: { select: { id: true, name: true, institutionName: true, type: true } } },
     orderBy: { date: "desc" },
   });
+}
 
-  const potentialPairs: TransferPair[] = [];
+type Candidate = Awaited<ReturnType<typeof loadCandidates>>[number];
 
-  // Split into expenses (positive) and income (negative)
-  const expenses = transactions.filter((t) => t.amount > 0);
-  const income = transactions.filter((t) => t.amount < 0);
+function scorePair(out: Candidate, inn: Candidate): { confidence: "high" | "medium" | "low"; reason: string } {
+  const days = daysBetween(out.date, inn.date);
+  const sameDay = days < 1;
 
-  for (const expense of expenses) {
-    for (const incomeItem of income) {
-      // Skip if same account
-      if (expense.accountId === incomeItem.accountId) continue;
+  const zelleBoth = /zelle/i.test(out.name) && /zelle/i.test(inn.name);
+  const cardPayment =
+    (out.account.type === "depository" && inn.account.type === "credit") ||
+    /credit card|cc payment|autopay|payment thank you/i.test(out.name) ||
+    /credit card|cc payment|autopay|payment thank you/i.test(inn.name);
+  const transferWords =
+    /transfer|deposit|withdrawal|payment|ach|wire/i.test(out.name) ||
+    /transfer|deposit|withdrawal|payment|ach|wire/i.test(inn.name);
 
-      // Check if amounts match (within $0.01 tolerance for floating point)
-      const amountMatch = Math.abs(expense.amount - Math.abs(incomeItem.amount)) < 0.01;
-      if (!amountMatch) continue;
+  if (zelleBoth) {
+    return { confidence: "high", reason: "Zelle on both sides, same amount between two of your accounts" };
+  }
+  if (cardPayment) {
+    return { confidence: "high", reason: "Looks like a credit card payment from a bank account" };
+  }
+  if (sameDay && transferWords) {
+    return { confidence: "high", reason: "Same day, same amount, and both read like a transfer" };
+  }
+  if (sameDay) return { confidence: "medium", reason: "Same amount on the same day, across two accounts" };
+  if (transferWords) {
+    return { confidence: "medium", reason: `Same amount ${Math.round(days)} day(s) apart, worded like a transfer` };
+  }
+  return { confidence: "low", reason: `Same amount ${Math.round(days)} day(s) apart` };
+}
 
-      // Check if dates are close (within 3 days)
-      const daysDiff = Math.abs((expense.date.getTime() - incomeItem.date.getTime()) / (1000 * 60 * 60 * 24));
-      if (daysDiff > 3) continue;
+const CONFIDENCE_ORDER = { high: 0, medium: 1, low: 2 } as const;
 
-      // Determine confidence level
-      let confidence: "high" | "medium" | "low" = "medium";
+export async function detectPotentialTransfers(): Promise<TransferPair[]> {
+  const candidates = await loadCandidates();
 
-      // Check for transfer and credit card payment keywords
-      const hasTransferKeywords =
-        /transfer|deposit|withdrawal|payment|ach|wire/i.test(expense.name) ||
-        /transfer|deposit|withdrawal|payment|ach|wire/i.test(incomeItem.name);
+  // Bucketed by absolute amount so this doesn't compare every outflow against
+  // every inflow. A transfer's two legs are equal and opposite, so the only
+  // inflows worth looking at are the ones in the matching bucket.
+  const inflowsByAmount = new Map<string, Candidate[]>();
+  for (const t of candidates) {
+    if (t.amount >= 0) continue;
+    const key = Math.abs(t.amount).toFixed(2);
+    const list = inflowsByAmount.get(key);
+    list ? list.push(t) : inflowsByAmount.set(key, [t]);
+  }
 
-      const isCreditCardPayment =
-        (expense.account.type === "depository" && incomeItem.account.type === "credit") ||
-        /credit card|cc payment|autopay/i.test(expense.name) ||
-        /credit card|cc payment|autopay/i.test(incomeItem.name);
+  const pairs: TransferPair[] = [];
+  for (const out of candidates) {
+    if (out.amount <= 0) continue;
+    for (const inn of inflowsByAmount.get(out.amount.toFixed(2)) ?? []) {
+      if (out.accountId === inn.accountId) continue; // same account isn't a transfer
+      if (Math.abs(out.amount - Math.abs(inn.amount)) > AMOUNT_TOLERANCE) continue;
+      if (daysBetween(out.date, inn.date) > MAX_DAYS_APART) continue;
 
-      // Check if it's a Zelle transfer (both sides mention Zelle)
-      const isZelleTransfer =
-        /zelle/i.test(expense.name) && /zelle/i.test(incomeItem.name);
-
-      // High confidence if:
-      // - Zelle transfer between own accounts (both sides mention Zelle with matching amounts)
-      // - Credit card payment (checking -> credit card)
-      // - Same day AND contains transfer keywords
-      if (isZelleTransfer) {
-        confidence = "high";
-      } else if (isCreditCardPayment) {
-        confidence = "high";
-      } else if (daysDiff === 0 && hasTransferKeywords) {
-        confidence = "high";
-      } else if (daysDiff === 0) {
-        confidence = "medium";
-      } else if (hasTransferKeywords) {
-        confidence = "medium";
-      } else {
-        confidence = "low";
-      }
-
-      potentialPairs.push({
+      const { confidence, reason } = scorePair(out, inn);
+      pairs.push({
         fromTransaction: {
-          id: expense.id,
-          name: expense.name,
-          amount: expense.amount,
-          date: expense.date,
-          accountName: `${expense.account.institutionName} - ${expense.account.name}`,
+          id: out.id,
+          name: out.name,
+          amount: out.amount,
+          date: out.date,
+          accountName: describeAccount(out.account),
         },
         toTransaction: {
-          id: incomeItem.id,
-          name: incomeItem.name,
-          amount: Math.abs(incomeItem.amount),
-          date: incomeItem.date,
-          accountName: `${incomeItem.account.institutionName} - ${incomeItem.account.name}`,
+          id: inn.id,
+          name: inn.name,
+          amount: Math.abs(inn.amount),
+          date: inn.date,
+          accountName: describeAccount(inn.account),
         },
         confidence,
+        reason,
       });
     }
   }
 
-  // Sort by confidence and date
-  return potentialPairs.sort((a, b) => {
-    const confidenceOrder = { high: 0, medium: 1, low: 2 };
-    if (confidenceOrder[a.confidence] !== confidenceOrder[b.confidence]) {
-      return confidenceOrder[a.confidence] - confidenceOrder[b.confidence];
+  return pairs.sort((a, b) => {
+    if (CONFIDENCE_ORDER[a.confidence] !== CONFIDENCE_ORDER[b.confidence]) {
+      return CONFIDENCE_ORDER[a.confidence] - CONFIDENCE_ORDER[b.confidence];
     }
     return b.fromTransaction.date.getTime() - a.fromTransaction.date.getTime();
   });
 }
 
-// Link two transactions as a transfer pair
-export async function linkTransferPair(transaction1Id: string, transaction2Id: string) {
-  const transferCategory = await prisma.category.findFirst({
-    where: { name: "Transfer" },
+// Everything still unpaired, split by direction, for matching by hand when the
+// detector can't be confident — amounts that differ by a fee, or legs more
+// than a few days apart.
+export async function getUnmatchedFlows() {
+  const candidates = await loadCandidates();
+  const shape = (t: Candidate) => ({
+    id: t.id,
+    name: t.name,
+    amount: t.amount,
+    date: t.date,
+    accountId: t.accountId,
+    accountName: describeAccount(t.account),
+    kind: t.kind,
   });
+  return {
+    outgoing: candidates.filter((t) => t.amount > 0).map(shape),
+    incoming: candidates.filter((t) => t.amount < 0).map(shape),
+  };
+}
+
+// Pairs that are already linked, one row per pair rather than per leg, so a
+// wrong match can be reviewed and undone.
+export async function listLinkedPairs() {
+  const legs = await prisma.transaction.findMany({
+    where: { transferPairId: { not: null } },
+    include: { account: { select: { name: true, institutionName: true } } },
+    orderBy: { date: "desc" },
+  });
+
+  const byId = new Map(legs.map((t) => [t.id, t]));
+  const seen = new Set<string>();
+  const pairs = [];
+
+  for (const leg of legs) {
+    if (seen.has(leg.id)) continue;
+    const other = leg.transferPairId ? byId.get(leg.transferPairId) : undefined;
+    // A leg whose counterpart is missing is a broken link, not a pair — show
+    // it so it can be unlinked rather than hiding it from both views.
+    seen.add(leg.id);
+    if (other) seen.add(other.id);
+
+    const out = leg.amount > 0 ? leg : other;
+    const inn = leg.amount > 0 ? other : leg;
+
+    pairs.push({
+      outgoing: out
+        ? {
+            id: out.id,
+            name: out.name,
+            amount: out.amount,
+            date: out.date,
+            accountName: describeAccount(out.account),
+          }
+        : null,
+      incoming: inn
+        ? {
+            id: inn.id,
+            name: inn.name,
+            amount: Math.abs(inn.amount),
+            date: inn.date,
+            accountName: describeAccount(inn.account),
+          }
+        : null,
+      broken: !other,
+    });
+  }
+
+  return pairs;
+}
+
+// Link two transactions as a transfer pair
+export class TransferLinkError extends Error {}
+
+export async function linkTransferPair(transaction1Id: string, transaction2Id: string) {
+  // Matching by hand makes every one of these reachable from the UI. Without
+  // the guards, linking a transaction that is already half of another pair
+  // leaves its former counterpart pointing at a transaction that no longer
+  // points back — a half-linked row that is excluded from spending but has
+  // nothing to collapse against.
+  if (transaction1Id === transaction2Id) {
+    throw new TransferLinkError("A transaction can't be a transfer with itself.");
+  }
+
+  const [a, b] = await Promise.all([
+    prisma.transaction.findUnique({ where: { id: transaction1Id } }),
+    prisma.transaction.findUnique({ where: { id: transaction2Id } }),
+  ]);
+  if (!a || !b) throw new TransferLinkError("One of those transactions no longer exists.");
+
+  if (a.accountId === b.accountId) {
+    throw new TransferLinkError("Both sides are on the same account, so no money moved between accounts.");
+  }
+  if (a.amount > 0 === b.amount > 0) {
+    throw new TransferLinkError("A transfer needs one outgoing and one incoming transaction.");
+  }
+  for (const t of [a, b]) {
+    if (t.transferPairId && t.transferPairId !== (t.id === a.id ? b.id : a.id)) {
+      throw new TransferLinkError("One of those is already matched to something else — unlink it first.");
+    }
+  }
+
+  const transferCategory = await prisma.category.findFirst({ where: { isTransfer: true } });
 
   // Update both transactions to link to each other and set category to Transfer
   await prisma.transaction.update({
@@ -191,14 +290,25 @@ export async function unlinkTransferPair(transactionId: string) {
   }
 }
 
-// Auto-detect and link high-confidence transfers
+// Auto-detect and link high-confidence transfers.
 export async function autoLinkTransfers() {
   const potentialPairs = await detectPotentialTransfers();
-  const highConfidencePairs = potentialPairs.filter((p) => p.confidence === "high");
 
+  // A transaction can appear in several candidate pairs — three $500 moves in
+  // one week all match each other. Linking them as they come would pair one
+  // transaction twice and overwrite the first link, silently leaving a leg
+  // pointing at a transaction that no longer points back. Best-scored pairs
+  // win and each transaction is consumed once.
+  const used = new Set<string>();
   let linked = 0;
-  for (const pair of highConfidencePairs) {
+
+  for (const pair of potentialPairs) {
+    if (pair.confidence !== "high") continue;
+    if (used.has(pair.fromTransaction.id) || used.has(pair.toTransaction.id)) continue;
+
     await linkTransferPair(pair.fromTransaction.id, pair.toTransaction.id);
+    used.add(pair.fromTransaction.id);
+    used.add(pair.toTransaction.id);
     linked++;
   }
 

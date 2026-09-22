@@ -535,7 +535,7 @@ export default function IncomeSpending() {
               <ResponsiveContainer width="100%" height={240}>
                 <PieChart>
                   <Pie
-                    data={data.expensesByCategory.filter((cat) => cat.name !== "Transfer").slice(0, 8)}
+                    data={data.expensesByCategory.slice(0, 8)}
                     dataKey="total"
                     nameKey="name"
                     cx="50%"
@@ -544,7 +544,6 @@ export default function IncomeSpending() {
                     outerRadius={85}
                   >
                     {data.expensesByCategory
-                      .filter((cat) => cat.name !== "Transfer")
                       .slice(0, 8)
                       .map((_, index) => (
                         <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
@@ -653,7 +652,7 @@ export default function IncomeSpending() {
             <p className="py-4 text-sm text-slate-500">No income recorded for this period</p>
           ) : (
             <div className="space-y-2">
-              {data.incomeByCategory.filter((cat) => cat.name !== "Transfer").map((cat) => {
+              {data.incomeByCategory.map((cat) => {
                 const key = `income-${cat.categoryId || "uncategorized"}`;
                 const isExpanded = expandedCategories.has(key);
                 const transactions = categoryTransactions[key] || [];
@@ -747,7 +746,7 @@ export default function IncomeSpending() {
             <p className="py-4 text-sm text-slate-500">No expenses recorded for this period</p>
           ) : (
             <div className="space-y-2">
-              {data.expensesByCategory.filter((cat) => cat.name !== "Transfer").map((cat) => {
+              {data.expensesByCategory.map((cat) => {
                 const key = `expense-${cat.categoryId || "uncategorized"}`;
                 const isExpanded = expandedCategories.has(key);
                 const transactions = categoryTransactions[key] || [];

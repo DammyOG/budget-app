@@ -56,11 +56,16 @@ model Account {
 }
 
 model Category {
-  id           String   @id @default(cuid())
-  name         String   @unique
-  icon         String?
-  isIncome     Boolean  @default(false)
-  createdAt    DateTime @default(now())
+  id       String   @id @default(cuid())
+  name     String   @unique
+  icon     String?
+  isIncome Boolean  @default(false)
+  // Money moving between the user's own accounts, which is neither income nor
+  // spending. Previously this was a hardcoded set of category names checked in
+  // four separate places, so marking your own category (say "Brokerage
+  // deposit") as a transfer was impossible without editing the source.
+  isTransfer Boolean  @default(false)
+  createdAt  DateTime @default(now())
 
   transactions        Transaction[]
   budgets             Budget[]

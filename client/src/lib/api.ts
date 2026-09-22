@@ -149,6 +149,24 @@ export interface IncomeSpendingSummary {
   trend: MonthTotals[];
 }
 
+export interface UnmatchedFlow {
+  id: string;
+  name: string;
+  amount: number;
+  date: string;
+  accountId: string;
+  accountName: string;
+  kind: TransactionKind;
+}
+
+export interface LinkedPair {
+  outgoing: { id: string; name: string; amount: number; date: string; accountName: string } | null;
+  incoming: { id: string; name: string; amount: number; date: string; accountName: string } | null;
+  // A leg whose counterpart is gone: excluded from spending but with nothing
+  // to collapse against, so it needs unlinking.
+  broken: boolean;
+}
+
 export interface TransferPair {
   fromTransaction: {
     id: string;
@@ -165,6 +183,7 @@ export interface TransferPair {
     accountName: string;
   };
   confidence: "high" | "medium" | "low";
+  reason: string;
 }
 
 export interface RecurringTransaction {
@@ -266,6 +285,8 @@ export const api = {
   },
 
   detectTransfers: () => request<TransferPair[]>("/transfers/detect"),
+  getUnmatchedFlows: () => request<{ outgoing: UnmatchedFlow[]; incoming: UnmatchedFlow[] }>("/transfers/unmatched"),
+  getLinkedPairs: () => request<LinkedPair[]>("/transfers/linked"),
   linkTransferPair: (transaction1Id: string, transaction2Id: string) =>
     request<{ success: boolean }>("/transfers/link", {
       method: "POST",

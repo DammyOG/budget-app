@@ -172,14 +172,18 @@ export async function autoCategorizeTransaction(
 
   if (!transaction) return null;
 
+  // A matched transfer's category is settled by the pairing. Without this,
+  // re-running categorization relabels "Zelle payment to ..." back to Zelle
+  // Sent and flips kind to expense, so a transfer the user had already
+  // matched starts inflating spending again on the next sync.
+  if (transaction.transferPairId) return null;
+
   // Special handling for "payment thank you" type messages
   // These are often credit card payment confirmations
   if (/payment\s+(thank you|sent|received)/i.test(transactionName)) {
     // If it's from a credit card account, it's likely a payment TO the card (transfer)
     if (transaction.account.type === "credit") {
-      const transferCategory = await prisma.category.findFirst({
-        where: { name: "Transfer" },
-      });
+      const transferCategory = await prisma.category.findFirst({ where: { isTransfer: true } });
       if (transferCategory) {
         await applyCategory(transactionId, transferCategory.id, transaction.kindLocked);
         return transferCategory.name;
