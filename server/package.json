@@ -4,8 +4,11 @@
   "private": true,
   "type": "commonjs",
   "scripts": {
+    "predev": "prisma migrate deploy && prisma generate",
     "dev": "tsx watch src/index.ts",
+    "prebuild": "prisma generate",
     "build": "tsc -p tsconfig.json",
+    "prestart": "prisma migrate deploy",
     "start": "node dist/index.js",
     "verify:money-model": "tsx scripts/verify-money-model.ts",
     "verify:transaction-list": "tsx scripts/verify-transaction-list.ts",
