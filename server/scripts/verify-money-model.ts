@@ -58,20 +58,20 @@ function check(label: string, actual: any, expected: any) {
   const tx = (body: any) => api("/transactions/manual", { method: "POST", body: JSON.stringify(body) });
 
   // Zelle between two of my own accounts, legs settling 2 days apart.
-  const zelleOut = await tx({ accountId: checking.id, amount: 500, date: d(10), name: "Zelle Transfer To Ally" });
-  const zelleIn = await tx({ accountId: savings.id, amount: -500, date: d(12), name: "Zelle Transfer From BofA" });
+  const zelleOut = await tx({ accountId: checking.id, amount: -500, date: d(10), name: "Zelle Transfer To Ally" });
+  const zelleIn = await tx({ accountId: savings.id, amount: 500, date: d(12), name: "Zelle Transfer From BofA" });
 
   // Credit card payment — the double-count case.
-  const cardPayOut = await tx({ accountId: checking.id, amount: 1200, date: d(15), name: "Chase Card Payment" });
-  const cardPayIn = await tx({ accountId: card.id, amount: -1200, date: d(15), name: "Payment Thank You" });
+  const cardPayOut = await tx({ accountId: checking.id, amount: -1200, date: d(15), name: "Chase Card Payment" });
+  const cardPayIn = await tx({ accountId: card.id, amount: 1200, date: d(15), name: "Payment Thank You" });
 
   // Payroll.
-  await tx({ accountId: checking.id, amount: -3000, date: d(1), name: "ACME PAYROLL", categoryId: salary.id });
+  await tx({ accountId: checking.id, amount: 3000, date: d(1), name: "ACME PAYROLL", categoryId: salary.id });
 
   // Real spending, plus a refund against the same category.
-  await tx({ accountId: card.id, amount: 200, date: d(5), name: "Amazon Order", categoryId: shopping.id });
-  await tx({ accountId: card.id, amount: -40, date: d(20), name: "Amazon Refund", categoryId: shopping.id });
-  await tx({ accountId: card.id, amount: 150, date: d(7), name: "Whole Foods", categoryId: groceries.id });
+  await tx({ accountId: card.id, amount: -200, date: d(5), name: "Amazon Order", categoryId: shopping.id });
+  await tx({ accountId: card.id, amount: 40, date: d(20), name: "Amazon Refund", categoryId: shopping.id });
+  await tx({ accountId: card.id, amount: -150, date: d(7), name: "Whole Foods", categoryId: groceries.id });
 
   // Pair the two transfers explicitly (mirrors what auto-detection does).
   await api("/transfers/link", {

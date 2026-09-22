@@ -1,0 +1,12 @@
+-- Flip the stored sign convention so it matches what the app displays:
+-- negative is money leaving the account, positive is money arriving.
+--
+-- Amounts were stored in Plaid's convention (positive = money out) and
+-- inverted at render time. Holding one convention in the database and the
+-- opposite on screen meant every comparison had to state which one it was
+-- written in, and several money bugs came from getting that wrong.
+--
+-- absAmount is a magnitude and is unaffected.
+--
+-- This is its own inverse: applying it twice restores the original values.
+UPDATE "Transaction" SET "amount" = -"amount";

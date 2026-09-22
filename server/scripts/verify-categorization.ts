@@ -44,9 +44,9 @@ const D = (n: number) => new Date(Date.UTC(2026, 8, n)).toISOString().slice(0, 1
   // like a failure here.
   console.log("\nOne answer covers every charge from that merchant:");
   const gym = [
-    await tx("ZZVERIFY FITNESS *8823 ARLINGTON VA", 42.5, 2),
-    await tx("ZZVERIFY FITNESS *2291 ARLINGTON VA", 42.5, 9),
-    await tx("ZZVERIFY FITNESS *7734 ARLINGTON VA", 42.5, 16),
+    await tx("ZZVERIFY FITNESS *8823 ARLINGTON VA", -42.5, 2),
+    await tx("ZZVERIFY FITNESS *2291 ARLINGTON VA", -42.5, 9),
+    await tx("ZZVERIFY FITNESS *7734 ARLINGTON VA", -42.5, 16),
   ];
   const before = await api("/transactions?limit=200");
   check(
@@ -71,7 +71,7 @@ const D = (n: number) => new Date(Date.UTC(2026, 8, n)).toISOString().slice(0, 1
 
   // The point of the rule: it has to apply to charges that arrive later too.
   console.log("\nA later charge from a taught merchant is categorized on sync:");
-  const laterGym = await tx("ZZVERIFY FITNESS *9910 ARLINGTON VA", 42.5, 23);
+  const laterGym = await tx("ZZVERIFY FITNESS *9910 ARLINGTON VA", -42.5, 23);
   await api("/transactions/auto-categorize", { method: "POST" });
   const withLater = await api("/transactions?limit=200");
   check(
@@ -98,15 +98,15 @@ const D = (n: number) => new Date(Date.UTC(2026, 8, n)).toISOString().slice(0, 1
     await api(`/transactions/${t.id}`, { method: "PATCH", body: JSON.stringify({ categoryId: cat("Groceries") }) });
   }
 
-  const unseen = await tx("ZZVERIFY COFFEE ROASTERS", 5.75, 20);
+  const unseen = await tx("ZZVERIFY COFFEE ROASTERS", -5.75, 20);
   const queue = await api("/transactions/teach?limit=20");
   const guess = queue.merchants.find((m: any) => m.sampleName === "ZZVERIFY COFFEE ROASTERS")?.guess;
   check("Unseen coffee shop is guessed as dining", guess?.categoryName, "Dining & Restaurants");
   check("Guess carries a confidence", typeof guess?.confidence === "number" && guess.confidence > 0, true);
 
   console.log("\nThe teach queue is ranked by what answering resolves:");
-  for (let i = 0; i < 6; i++) await tx(`ZZVERIFY HARDWARE ${1000 + i}`, 80, 14);
-  await tx("ZZVERIFY ONEOFF 5512", 3, 15);
+  for (let i = 0; i < 6; i++) await tx(`ZZVERIFY HARDWARE ${1000 + i}`, -80, 14);
+  await tx("ZZVERIFY ONEOFF 5512", -3, 15);
   const ranked = await api("/transactions/teach?limit=20");
   const hardwareIdx = ranked.merchants.findIndex((m: any) => m.merchantKey.includes("ZZVERIFY HARDWARE"));
   const oneOffIdx = ranked.merchants.findIndex((m: any) => m.merchantKey.includes("ZZVERIFY ONEOFF"));
@@ -150,11 +150,11 @@ const D = (n: number) => new Date(Date.UTC(2026, 8, n)).toISOString().slice(0, 1
   // bucket and the client's charts (>1) and comparison (>=2) never rendered.
   const augTx = await api("/transactions/manual", {
     method: "POST",
-    body: JSON.stringify({ accountId: acct.id, amount: -1000, date: "2026-08-10", name: "CAT-PRIOR PAYROLL", kind: "income" }),
+    body: JSON.stringify({ accountId: acct.id, amount: 1000, date: "2026-08-10", name: "CAT-PRIOR PAYROLL", kind: "income" }),
   });
   const sepTx = await api("/transactions/manual", {
     method: "POST",
-    body: JSON.stringify({ accountId: acct.id, amount: -1500, date: "2026-09-10", name: "CAT-CURRENT PAYROLL", kind: "income" }),
+    body: JSON.stringify({ accountId: acct.id, amount: 1500, date: "2026-09-10", name: "CAT-CURRENT PAYROLL", kind: "income" }),
   });
   const sep = await api("/dashboard/income-spending?startDate=2026-09-01T00:00:00Z&endDate=2026-10-01T00:00:00Z&groupBy=month");
   check("Selected month income", sep.totalIncome >= 1500, true);

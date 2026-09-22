@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { api, formatSignedAmount, Transaction, Category, TransactionKind } from "../lib/api";
+import { api, formatSignedAmount, isOutflow, Transaction, Category, TransactionKind } from "../lib/api";
 import { useToast } from "./ToastProvider";
 
 const KIND_LABELS: Record<TransactionKind, string> = {
@@ -82,7 +82,7 @@ export default function TransactionDetailModal({
               className={`text-3xl font-bold ${
                 transaction.kind === "transfer"
                   ? "text-gray-500"
-                  : transaction.amount > 0
+                  : isOutflow(transaction.amount)
                   ? "text-red-600"
                   : "text-green-600"
               }`}
@@ -96,7 +96,7 @@ export default function TransactionDetailModal({
                 ? "Transfer — excluded from income and spending"
                 : transaction.kind === "income"
                 ? "Income"
-                : transaction.amount < 0
+                : !isOutflow(transaction.amount)
                 ? "Refund"
                 : "Expense"}
             </p>

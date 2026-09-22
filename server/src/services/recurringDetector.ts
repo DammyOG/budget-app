@@ -1,4 +1,5 @@
 import { prisma } from "../db";
+import { isOutflow, spendingAmount } from "../money";
 
 export interface RecurringTransaction {
   name: string;
@@ -134,22 +135,25 @@ export async function detectRecurringTransactions(): Promise<RecurringTransactio
 export async function getRecurringStats() {
   const recurring = await detectRecurringTransactions();
 
-  const monthlyExpenses = recurring.filter((r) => r.averageAmount > 0 && r.frequency === "monthly");
-  const totalMonthlyExpenses = monthlyExpenses.reduce((sum, r) => sum + r.averageAmount, 0);
+  const monthlyExpenses = recurring.filter((r) => isOutflow(r.averageAmount) && r.frequency === "monthly");
+  const totalMonthlyExpenses = monthlyExpenses.reduce((sum, r) => sum + spendingAmount(r.averageAmount), 0);
 
-  const allRecurringExpenses = recurring.filter((r) => r.averageAmount > 0);
+  const allRecurringExpenses = recurring.filter((r) => isOutflow(r.averageAmount));
   const totalRecurringExpenses = allRecurringExpenses.reduce((sum, r) => {
     // Convert to monthly equivalent
+    // Read as a positive cost, since it's presented as "you spend this much
+    // per month" rather than as a signed ledger entry.
+    const perOccurrence = spendingAmount(r.averageAmount);
     const monthlyEquivalent =
       r.frequency === "weekly"
-        ? r.averageAmount * 4.33
+        ? perOccurrence * 4.33
         : r.frequency === "biweekly"
-        ? r.averageAmount * 2.17
+        ? perOccurrence * 2.17
         : r.frequency === "monthly"
-        ? r.averageAmount
+        ? perOccurrence
         : r.frequency === "quarterly"
-        ? r.averageAmount / 3
-        : r.averageAmount / 12; // yearly
+        ? perOccurrence / 3
+        : perOccurrence / 12; // yearly
     return sum + monthlyEquivalent;
   }, 0);
 

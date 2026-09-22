@@ -48,7 +48,7 @@ const DAY = "2026-07-15";
   // 25 transactions all on the SAME day — every one a tie under date sort.
   // This is what used to make offset pagination unstable.
   for (let i = 1; i <= 25; i++) {
-    await tx({ accountId: checking.id, amount: i, date: DAY, name: `Same Day ${String(i).padStart(2, "0")}` });
+    await tx({ accountId: checking.id, amount: -i, date: DAY, name: `Same Day ${String(i).padStart(2, "0")}` });
   }
 
   console.log("\nSame-day tie-break (biggest first):");
@@ -56,7 +56,7 @@ const DAY = "2026-07-15";
   check(
     "Largest same-day amount leads",
     firstPage.transactions.slice(0, 3).map((t: any) => t.amount),
-    [25, 24, 23]
+    [-25, -24, -23]
   );
 
   console.log("\nPagination stability across ties:");
@@ -77,7 +77,7 @@ const DAY = "2026-07-15";
   );
 
   console.log("\nSort by amount (magnitude, not signed):");
-  await tx({ accountId: checking.id, amount: -3000, date: DAY, name: "Big Paycheck", kind: "income" });
+  await tx({ accountId: checking.id, amount: 3000, date: DAY, name: "Big Paycheck", kind: "income" });
   const byAmount = await api(`/transactions?sort=amount&dir=desc&limit=3&startDate=${DAY}&endDate=${DAY}`);
   check(
     "A large inflow ranks as big, not last",
@@ -90,8 +90,8 @@ const DAY = "2026-07-15";
   check("Ascending name sort", byName.transactions[0].name, "Big Paycheck");
 
   console.log("\nTransfer pair collapsing:");
-  const out = await tx({ accountId: checking.id, amount: 500, date: DAY, name: "Transfer Out" });
-  const inn = await tx({ accountId: savings.id, amount: -500, date: DAY, name: "Transfer In" });
+  const out = await tx({ accountId: checking.id, amount: -500, date: DAY, name: "Transfer Out" });
+  const inn = await tx({ accountId: savings.id, amount: 500, date: DAY, name: "Transfer In" });
   await api("/transfers/link", {
     method: "POST",
     body: JSON.stringify({ transaction1Id: out.id, transaction2Id: inn.id }),
@@ -119,9 +119,9 @@ const DAY = "2026-07-15";
   check("Response reports it did not collapse", savingsLedger.collapsed, false);
 
   console.log("\nDuplicate detection:");
-  await tx({ accountId: checking.id, amount: 12.99, date: DAY, name: "NETFLIX" });
-  await tx({ accountId: checking.id, amount: 12.99, date: DAY, name: "NETFLIX" });
-  await tx({ accountId: checking.id, amount: 9.99, date: DAY, name: "SPOTIFY" });
+  await tx({ accountId: checking.id, amount: -12.99, date: DAY, name: "NETFLIX" });
+  await tx({ accountId: checking.id, amount: -12.99, date: DAY, name: "NETFLIX" });
+  await tx({ accountId: checking.id, amount: -9.99, date: DAY, name: "SPOTIFY" });
 
   const withDupes = await api(`/transactions?limit=100&startDate=${DAY}&endDate=${DAY}`);
   const netflix = withDupes.transactions.filter((t: any) => t.name === "NETFLIX");

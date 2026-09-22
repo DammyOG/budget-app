@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { prisma } from "../db";
+import { incomeAmount, spendingAmount } from "../money";
 
 const router = Router();
 
@@ -69,16 +70,16 @@ router.get("/summary", async (req, res) => {
     const key = tx.categoryId || "uncategorized";
     const name = tx.category?.name || "Uncategorized";
     if (!spendingByCategory[key]) spendingByCategory[key] = { categoryId: tx.categoryId, name, total: 0 };
-    spendingByCategory[key].total += tx.amount;
-    spending += tx.amount;
+    spendingByCategory[key].total += spendingAmount(tx.amount);
+    spending += spendingAmount(tx.amount);
   }
 
   const incomeTransactions = await prisma.transaction.findMany({
     where: { date: { gte: startDate, lt: endDate }, kind: "income" },
     select: { amount: true },
   });
-  // Plaid signs money-in negative; income reads more naturally positive.
-  const income = incomeTransactions.reduce((sum, tx) => sum - tx.amount, 0);
+  // Stored positive already (money in), so this is a plain sum.
+  const income = incomeTransactions.reduce((sum, tx) => sum + incomeAmount(tx.amount), 0);
 
   const budgets = await prisma.budget.findMany({ where: { month }, include: { category: true } });
   const budgetVsActual = budgets.map((b) => ({
@@ -157,8 +158,8 @@ router.get("/income-spending", async (req, res) => {
     const income = transactions.filter((t) => t.kind === "income");
     const expenses = transactions.filter((t) => t.kind === "expense");
 
-    const totalIncome = income.reduce((sum, t) => sum - t.amount, 0);
-    const totalExpenses = expenses.reduce((sum, t) => sum + t.amount, 0);
+    const totalIncome = income.reduce((sum, t) => sum + incomeAmount(t.amount), 0);
+    const totalExpenses = expenses.reduce((sum, t) => sum + spendingAmount(t.amount), 0);
 
     // Income by category
     const incomeByCategory: Record<string, { categoryId: string | null; name: string; total: number }> = {};
@@ -166,7 +167,7 @@ router.get("/income-spending", async (req, res) => {
       const key = tx.categoryId || "uncategorized";
       const name = tx.category?.name || "Uncategorized";
       if (!incomeByCategory[key]) incomeByCategory[key] = { categoryId: tx.categoryId, name, total: 0 };
-      incomeByCategory[key].total -= tx.amount;
+      incomeByCategory[key].total += incomeAmount(tx.amount);
     }
 
     // Expenses by category
@@ -175,7 +176,7 @@ router.get("/income-spending", async (req, res) => {
       const key = tx.categoryId || "uncategorized";
       const name = tx.category?.name || "Uncategorized";
       if (!expensesByCategory[key]) expensesByCategory[key] = { categoryId: tx.categoryId, name, total: 0 };
-      expensesByCategory[key].total += tx.amount;
+      expensesByCategory[key].total += spendingAmount(tx.amount);
     }
 
     // Month-by-month breakdown (if groupBy is month)
@@ -189,16 +190,16 @@ router.get("/income-spending", async (req, res) => {
         // Bucketed by kind rather than sign, so refunds reduce that month's
         // spending instead of showing up as income.
         if (tx.kind === "income") {
-          byMonth[monthKey].income -= tx.amount;
+          byMonth[monthKey].income += incomeAmount(tx.amount);
         } else {
-          byMonth[monthKey].expenses += tx.amount;
+          byMonth[monthKey].expenses += spendingAmount(tx.amount);
         }
         byMonth[monthKey].net = byMonth[monthKey].income - byMonth[monthKey].expenses;
       }
     }
 
-    const previousIncome = previousTx.filter((t) => t.kind === "income").reduce((s, t) => s - t.amount, 0);
-    const previousExpenses = previousTx.filter((t) => t.kind === "expense").reduce((s, t) => s + t.amount, 0);
+    const previousIncome = previousTx.filter((t) => t.kind === "income").reduce((s, t) => s + incomeAmount(t.amount), 0);
+    const previousExpenses = previousTx.filter((t) => t.kind === "expense").reduce((s, t) => s + spendingAmount(t.amount), 0);
 
     // Trailing months, so the charts have something to draw even when the
     // selected range is a single month.
@@ -214,8 +215,8 @@ router.get("/income-spending", async (req, res) => {
       const key = tx.date.toISOString().slice(0, 7);
       const bucket = trendBuckets[key];
       if (!bucket) continue;
-      if (tx.kind === "income") bucket.income -= tx.amount;
-      else bucket.expenses += tx.amount;
+      if (tx.kind === "income") bucket.income += incomeAmount(tx.amount);
+      else bucket.expenses += spendingAmount(tx.amount);
       bucket.net = bucket.income - bucket.expenses;
     }
 

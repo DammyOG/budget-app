@@ -84,7 +84,12 @@ router.get("/", async (req, res) => {
   // like money vanished.
   const collapsing = collapseTransfers !== "false" && !accountId;
   if (collapsing) {
-    where.NOT = { AND: [{ transferPairId: { not: null } }, { amount: { lt: 0 } }] };
+    // Hide the receiving leg and keep the sending one. Amounts are negative
+    // for money out and positive for money in, so the inflow is the positive
+    // side — this is a raw sign test in a query rather than a call to
+    // isInflow(), which is exactly why the sign convention needed a single
+    // definition instead of being restated at each site.
+    where.NOT = { AND: [{ transferPairId: { not: null } }, { amount: { gt: 0 } }] };
   }
 
   const sortField = VALID_SORTS.has(String(sort)) ? String(sort) : "date";
@@ -167,7 +172,7 @@ router.post("/manual", async (req, res) => {
       categoryId: categoryId || null,
       notes: notes || null,
       isManual: true,
-      // Defaults to expense regardless of sign — a negative manual amount is
+      // Defaults to expense regardless of sign — a positive manual amount is
       // far more often a refund than income, and inferring "income" from the
       // sign silently inflates the income figure.
       kind: kind || (await kindForCategory(categoryId || null)),

@@ -6,6 +6,7 @@ import {
   formatTransactionDate,
   type RecurringTransaction,
   type RecurringStats,
+  isOutflow,
 } from "../lib/api";
 import { Button, Card, EmptyState, HeroStat, PageHeader, Spinner, StatRow } from "../components/ui";
 
@@ -211,7 +212,7 @@ export default function Recurring() {
                             </div>
                             <div className="text-xs text-gray-500">{tx.accountName}</div>
                           </div>
-                          <div className={`font-medium ${tx.amount > 0 ? "text-red-600" : "text-green-600"}`}>
+                          <div className={`font-medium ${isOutflow(tx.amount) ? "text-red-600" : "text-green-600"}`}>
                             {formatSignedAmount(tx.amount)}
                           </div>
                         </div>

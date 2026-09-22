@@ -80,12 +80,12 @@ const MONTH = { start: "2026-09-01T00:00:00Z", end: "2026-10-01T00:00:00Z" };
 
   // Real income and real spending, so the transfer's effect is visible against
   // a known baseline rather than against zero.
-  await tx(checking, -4000, "2026-09-01", "XFER ACME PAYROLL");
-  await tx(card, 120, "2026-09-02", "XFER GROCERY RUN");
+  await tx(checking, 4000, "2026-09-01", "XFER ACME PAYROLL");
+  await tx(card, -120, "2026-09-02", "XFER GROCERY RUN");
 
   console.log("\nA Zelle between your own accounts:");
-  await tx(checking, 1500, "2026-09-10", "Zelle payment to Dami Ogunbode");
-  await tx(savings, -1500, "2026-09-10", "Zelle payment from Dami Ogunbode");
+  await tx(checking, -1500, "2026-09-10", "Zelle payment to Dami Ogunbode");
+  await tx(savings, 1500, "2026-09-10", "Zelle payment from Dami Ogunbode");
 
   // The path a real sync takes: categorize, then pair.
   await api("/transactions/auto-categorize", { method: "POST" });
@@ -98,8 +98,8 @@ const MONTH = { start: "2026-09-01T00:00:00Z", end: "2026-10-01T00:00:00Z" };
   check("No Transfer category in spending by category", afterZelle.expenseCats.includes("Transfer"), false);
 
   console.log("\nA credit card payment:");
-  await tx(checking, 800, "2026-09-14", "XFER CHASE CARD PAYMENT");
-  await tx(card, -800, "2026-09-14", "XFER PAYMENT THANK YOU");
+  await tx(checking, -800, "2026-09-14", "XFER CHASE CARD PAYMENT");
+  await tx(card, 800, "2026-09-14", "XFER PAYMENT THANK YOU");
   await api("/transactions/auto-categorize", { method: "POST" });
 
   const afterCard = await totals();
@@ -119,8 +119,8 @@ const MONTH = { start: "2026-09-01T00:00:00Z", end: "2026-10-01T00:00:00Z" };
   console.log("\nMatching by hand, for pairs the detector won't suggest:");
   // Amount differs by a wire fee and the legs are a week apart, so this is
   // below the detector's thresholds on purpose.
-  const feeOut = await tx(checking, 2000, "2026-09-03", "XFER WIRE TO BROKERAGE");
-  const feeIn = await tx(savings, -1975, "2026-09-11", "XFER WIRE RECEIVED");
+  const feeOut = await tx(checking, -2000, "2026-09-03", "XFER WIRE TO BROKERAGE");
+  const feeIn = await tx(savings, 1975, "2026-09-11", "XFER WIRE RECEIVED");
 
   const suggestions = await api("/transfers/detect");
   check(
@@ -154,8 +154,8 @@ const MONTH = { start: "2026-09-01T00:00:00Z", end: "2026-10-01T00:00:00Z" };
   check("The inflow counts as income again", afterUnlink.income, 4000 + 1975);
 
   console.log("\nA match that can't be right is refused with a reason:");
-  const a1 = await tx(checking, 50, "2026-09-20", "XFER ONE");
-  const a2 = await tx(checking, -50, "2026-09-20", "XFER TWO");
+  const a1 = await tx(checking, -50, "2026-09-20", "XFER ONE");
+  const a2 = await tx(checking, 50, "2026-09-20", "XFER TWO");
   const sameAccount = await rawPost("/transfers/link", { transaction1Id: a1.id, transaction2Id: a2.id });
   check("Same account is rejected", sameAccount.status, 400);
   check("Rejection explains why", /same account/i.test(sameAccount.body.error), true);
@@ -163,7 +163,7 @@ const MONTH = { start: "2026-09-01T00:00:00Z", end: "2026-10-01T00:00:00Z" };
   const self = await rawPost("/transfers/link", { transaction1Id: a1.id, transaction2Id: a1.id });
   check("A transaction can't pair with itself", self.status, 400);
 
-  const b1 = await tx(savings, 60, "2026-09-21", "XFER THREE");
+  const b1 = await tx(savings, -60, "2026-09-21", "XFER THREE");
   const sameDirection = await rawPost("/transfers/link", { transaction1Id: a1.id, transaction2Id: b1.id });
   check("Two outflows are rejected", sameDirection.status, 400);
 

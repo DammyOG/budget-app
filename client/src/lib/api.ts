@@ -308,11 +308,20 @@ export function formatCurrency(value: number | null | undefined): string {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value);
 }
 
-// Plaid signs money-out positive, which reads backwards from every finance app.
-// Flip it for display so a $50 coffee shows as -$50.00 and a paycheck as
-// +$2,000.00.
+// Amounts are stored the way they read: negative is money out. A $50 coffee is
+// -$50.00 and a paycheck is +$2,000.00, with no flip between storage and
+// display — that flip is where most of this app's money bugs came from.
 export function formatSignedAmount(amount: number): string {
-  return formatCurrency(-amount);
+  return formatCurrency(amount);
+}
+
+// Spending as a positive figure, for totals phrased as "you spent $310".
+export function spendingAmount(amount: number): number {
+  return -amount;
+}
+
+export function isOutflow(amount: number): boolean {
+  return amount < 0;
 }
 
 // Dates are stored at UTC midnight. Rendering them in local time shows every

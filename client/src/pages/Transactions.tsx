@@ -11,6 +11,7 @@ import {
   Transaction,
   TransactionKind,
   TransactionSort,
+  isOutflow,
 } from "../lib/api";
 import TransactionDetailModal from "../components/TransactionDetailModal";
 import { useToast } from "../components/ToastProvider";
@@ -105,7 +106,7 @@ function TransactionRow({ tx, onOpen }: { tx: Transaction; onOpen: () => void })
       </div>
       <div
         className={`shrink-0 font-semibold ${
-          isTransfer ? "text-slate-400" : tx.amount > 0 ? "text-slate-900" : "text-emerald-600"
+          isTransfer ? "text-slate-400" : isOutflow(tx.amount) ? "text-slate-900" : "text-emerald-600"
         }`}
       >
         {formatSignedAmount(tx.amount)}

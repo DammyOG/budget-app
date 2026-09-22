@@ -1,4 +1,5 @@
 import { prisma } from "../db";
+import { isInflow, isOutflow } from "../money";
 
 interface TransferPair {
   fromTransaction: { id: string; name: string; amount: number; date: Date; accountName: string };
@@ -82,7 +83,7 @@ export async function detectPotentialTransfers(): Promise<TransferPair[]> {
   // inflows worth looking at are the ones in the matching bucket.
   const inflowsByAmount = new Map<string, Candidate[]>();
   for (const t of candidates) {
-    if (t.amount >= 0) continue;
+    if (!isInflow(t.amount)) continue;
     const key = Math.abs(t.amount).toFixed(2);
     const list = inflowsByAmount.get(key);
     list ? list.push(t) : inflowsByAmount.set(key, [t]);
@@ -90,10 +91,10 @@ export async function detectPotentialTransfers(): Promise<TransferPair[]> {
 
   const pairs: TransferPair[] = [];
   for (const out of candidates) {
-    if (out.amount <= 0) continue;
-    for (const inn of inflowsByAmount.get(out.amount.toFixed(2)) ?? []) {
+    if (!isOutflow(out.amount)) continue;
+    for (const inn of inflowsByAmount.get(Math.abs(out.amount).toFixed(2)) ?? []) {
       if (out.accountId === inn.accountId) continue; // same account isn't a transfer
-      if (Math.abs(out.amount - Math.abs(inn.amount)) > AMOUNT_TOLERANCE) continue;
+      if (Math.abs(Math.abs(out.amount) - Math.abs(inn.amount)) > AMOUNT_TOLERANCE) continue;
       if (daysBetween(out.date, inn.date) > MAX_DAYS_APART) continue;
 
       const { confidence, reason } = scorePair(out, inn);
@@ -141,8 +142,8 @@ export async function getUnmatchedFlows() {
     kind: t.kind,
   });
   return {
-    outgoing: candidates.filter((t) => t.amount > 0).map(shape),
-    incoming: candidates.filter((t) => t.amount < 0).map(shape),
+    outgoing: candidates.filter((t) => isOutflow(t.amount)).map(shape),
+    incoming: candidates.filter((t) => isInflow(t.amount)).map(shape),
   };
 }
 
@@ -167,8 +168,8 @@ export async function listLinkedPairs() {
     seen.add(leg.id);
     if (other) seen.add(other.id);
 
-    const out = leg.amount > 0 ? leg : other;
-    const inn = leg.amount > 0 ? other : leg;
+    const out = isOutflow(leg.amount) ? leg : other;
+    const inn = isOutflow(leg.amount) ? other : leg;
 
     pairs.push({
       outgoing: out
@@ -218,7 +219,7 @@ export async function linkTransferPair(transaction1Id: string, transaction2Id: s
   if (a.accountId === b.accountId) {
     throw new TransferLinkError("Both sides are on the same account, so no money moved between accounts.");
   }
-  if (a.amount > 0 === b.amount > 0) {
+  if (isOutflow(a.amount) === isOutflow(b.amount)) {
     throw new TransferLinkError("A transfer needs one outgoing and one incoming transaction.");
   }
   for (const t of [a, b]) {
@@ -267,7 +268,7 @@ export async function unlinkTransferPair(transactionId: string) {
   // Each leg reverts by its own direction. Forcing both to "expense" would turn
   // the inflow into a negative expense that silently cancels out the outflow,
   // leaving total spending unchanged after breaking the pair.
-  const kindByDirection = (amount: number) => (amount < 0 ? "income" : "expense");
+  const kindByDirection = (amount: number) => (isInflow(amount) ? "income" : "expense");
 
   await prisma.transaction.update({
     where: { id: transactionId },

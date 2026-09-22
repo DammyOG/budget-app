@@ -1,4 +1,5 @@
 import { prisma } from "../db";
+import { fromPlaidAmount } from "../money";
 import { plaidClient } from "../plaid";
 import { decrypt } from "../crypto";
 
@@ -38,14 +39,14 @@ export async function syncTransactionsForItem(plaidItemDbId: string) {
         create: {
           plaidTransactionId: tx.transaction_id,
           accountId,
-          amount: tx.amount,
+          amount: fromPlaidAmount(tx.amount),
           date: new Date(tx.date),
           name: tx.name,
           merchantName: tx.merchant_name ?? null,
           pending: tx.pending,
         },
         update: {
-          amount: tx.amount,
+          amount: fromPlaidAmount(tx.amount),
           date: new Date(tx.date),
           name: tx.name,
           merchantName: tx.merchant_name ?? null,
@@ -63,7 +64,7 @@ export async function syncTransactionsForItem(plaidItemDbId: string) {
       await prisma.transaction.update({
         where: { id: existing.id },
         data: {
-          amount: tx.amount,
+          amount: fromPlaidAmount(tx.amount),
           date: new Date(tx.date),
           name: tx.name,
           merchantName: tx.merchant_name ?? null,
