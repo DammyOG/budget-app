@@ -160,11 +160,11 @@ export interface UnmatchedFlow {
 }
 
 export interface LinkedPair {
-  outgoing: { id: string; name: string; amountCents: number; date: string; accountName: string } | null;
-  incoming: { id: string; name: string; amountCents: number; date: string; accountName: string } | null;
-  // A leg whose counterpart is gone: excluded from spending but with nothing
-  // to collapse against, so it needs unlinking.
-  broken: boolean;
+  id: string;
+  // Never null: a transfer owns both of its legs, so half a pair can't be
+  // represented. The "broken" case this used to carry is gone with it.
+  outgoing: { id: string; name: string; amountCents: number; date: string; accountName: string };
+  incoming: { id: string; name: string; amountCents: number; date: string; accountName: string };
 }
 
 export interface TransferPair {

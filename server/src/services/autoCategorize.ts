@@ -182,7 +182,7 @@ export async function autoCategorizeTransaction(
   // Get the transaction to check account type
   const transaction = await prisma.transaction.findUnique({
     where: { id: transactionId },
-    include: { account: true },
+    include: { account: true, transferAsOutgoing: true, transferAsIncoming: true },
   });
 
   if (!transaction) return null;
@@ -191,7 +191,7 @@ export async function autoCategorizeTransaction(
   // re-running categorization relabels "Zelle payment to ..." back to Zelle
   // Sent and flips kind to expense, so a transfer the user had already
   // matched starts inflating spending again on the next sync.
-  if (transaction.transferPairId) return null;
+  if (transaction.transferAsOutgoing || transaction.transferAsIncoming) return null;
 
   // Special handling for "payment thank you" type messages
   // These are often credit card payment confirmations

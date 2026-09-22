@@ -270,41 +270,28 @@ export default function Transfers() {
           {linked.length === 0 ? (
             <EmptyState icon="⇄" title="Nothing matched yet" hint="Matched transfers appear here so you can undo one." />
           ) : (
-            linked.map((pair, i) => (
-              <Card key={pair.outgoing?.id ?? pair.incoming?.id ?? i}>
-                {pair.broken && (
-                  <p className="mb-2 rounded-lg bg-amber-50 p-2 text-xs text-amber-800">
-                    The other side of this is missing. Unmatch it so it counts correctly again.
-                  </p>
-                )}
+            linked.map((pair) => (
+              <Card key={pair.id}>
                 <div className="space-y-2">
-                  {pair.outgoing && (
-                    <Leg
-                      label="Out"
-                      tone="out"
-                      name={pair.outgoing.name}
-                      amount={pair.outgoing.amountCents}
-                      accountName={pair.outgoing.accountName}
-                      date={pair.outgoing.date}
-                    />
-                  )}
-                  {pair.outgoing && pair.incoming && <div className="text-center text-slate-400">↓</div>}
-                  {pair.incoming && (
-                    <Leg
-                      label="In"
-                      tone="in"
-                      name={pair.incoming.name}
-                      amount={pair.incoming.amountCents}
-                      accountName={pair.incoming.accountName}
-                      date={pair.incoming.date}
-                    />
-                  )}
+                  <Leg
+                    label="Out"
+                    tone="out"
+                    name={pair.outgoing.name}
+                    amount={pair.outgoing.amountCents}
+                    accountName={pair.outgoing.accountName}
+                    date={pair.outgoing.date}
+                  />
+                  <div className="text-center text-slate-400">↓</div>
+                  <Leg
+                    label="In"
+                    tone="in"
+                    name={pair.incoming.name}
+                    amount={pair.incoming.amountCents}
+                    accountName={pair.incoming.accountName}
+                    date={pair.incoming.date}
+                  />
                 </div>
-                <Button
-                  className="mt-3 w-full"
-                  disabled={busy}
-                  onClick={() => unlink((pair.outgoing ?? pair.incoming)!.id)}
-                >
+                <Button className="mt-3 w-full" disabled={busy} onClick={() => unlink(pair.outgoing.id)}>
                   Unmatch
                 </Button>
               </Card>

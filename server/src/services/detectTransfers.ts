@@ -34,7 +34,7 @@ async function loadCandidates() {
   since.setDate(since.getDate() - WINDOW_DAYS);
 
   return prisma.transaction.findMany({
-    where: { date: { gte: since }, transferPairId: null },
+    where: { date: { gte: since }, transferAsOutgoing: { is: null }, transferAsIncoming: { is: null } },
     include: { account: { select: { id: true, name: true, institutionName: true, type: true } } },
     orderBy: { date: "desc" },
   });
@@ -149,72 +149,55 @@ export async function getUnmatchedFlows() {
   };
 }
 
-// Pairs that are already linked, one row per pair rather than per leg, so a
-// wrong match can be reviewed and undone.
+// Every matched transfer, so a wrong one can be found and undone. One row
+// per transfer now, rather than assembled from two rows that point at each
+// other and might not agree.
 export async function listLinkedPairs() {
-  const legs = await prisma.transaction.findMany({
-    where: { transferPairId: { not: null } },
-    include: { account: { select: { name: true, institutionName: true } } },
-    orderBy: { date: "desc" },
+  const transfers = await prisma.transfer.findMany({
+    include: {
+      outgoing: { include: { account: { select: { name: true, institutionName: true } } } },
+      incoming: { include: { account: { select: { name: true, institutionName: true } } } },
+    },
+    orderBy: { createdAt: "desc" },
   });
 
-  const byId = new Map(legs.map((t) => [t.id, t]));
-  const seen = new Set<string>();
-  const pairs = [];
-
-  for (const leg of legs) {
-    if (seen.has(leg.id)) continue;
-    const other = leg.transferPairId ? byId.get(leg.transferPairId) : undefined;
-    // A leg whose counterpart is missing is a broken link, not a pair — show
-    // it so it can be unlinked rather than hiding it from both views.
-    seen.add(leg.id);
-    if (other) seen.add(other.id);
-
-    const out = isOutflow(leg.amountCents) ? leg : other;
-    const inn = isOutflow(leg.amountCents) ? other : leg;
-
-    pairs.push({
-      outgoing: out
-        ? {
-            id: out.id,
-            name: out.name,
-            amountCents: out.amountCents,
-            date: out.date,
-            accountName: describeAccount(out.account),
-          }
-        : null,
-      incoming: inn
-        ? {
-            id: inn.id,
-            name: inn.name,
-            amountCents: Math.abs(inn.amountCents),
-            date: inn.date,
-            accountName: describeAccount(inn.account),
-          }
-        : null,
-      broken: !other,
-    });
-  }
-
-  return pairs;
+  return transfers.map((t) => ({
+    id: t.id,
+    outgoing: {
+      id: t.outgoing.id,
+      name: t.outgoing.name,
+      amountCents: t.outgoing.amountCents,
+      date: t.outgoing.date,
+      accountName: describeAccount(t.outgoing.account),
+    },
+    incoming: {
+      id: t.incoming.id,
+      name: t.incoming.name,
+      amountCents: Math.abs(t.incoming.amountCents),
+      date: t.incoming.date,
+      accountName: describeAccount(t.incoming.account),
+    },
+  }));
 }
 
-// Link two transactions as a transfer pair
 export class TransferLinkError extends Error {}
 
+// Creating the transfer and marking both legs happens in one transaction, so
+// a failure partway can't leave a pair recorded with only one leg relabelled.
 export async function linkTransferPair(transaction1Id: string, transaction2Id: string) {
-  // Matching by hand makes every one of these reachable from the UI. Without
-  // the guards, linking a transaction that is already half of another pair
-  // leaves its former counterpart pointing at a transaction that no longer
-  // points back — a half-linked row that is excluded from spending but has
-  // nothing to collapse against.
   if (transaction1Id === transaction2Id) {
     throw new TransferLinkError("A transaction can't be a transfer with itself.");
   }
 
   const [a, b] = await Promise.all([
-    prisma.transaction.findUnique({ where: { id: transaction1Id } }),
-    prisma.transaction.findUnique({ where: { id: transaction2Id } }),
+    prisma.transaction.findUnique({
+      where: { id: transaction1Id },
+      include: { transferAsOutgoing: true, transferAsIncoming: true },
+    }),
+    prisma.transaction.findUnique({
+      where: { id: transaction2Id },
+      include: { transferAsOutgoing: true, transferAsIncoming: true },
+    }),
   ]);
   if (!a || !b) throw new TransferLinkError("One of those transactions no longer exists.");
 
@@ -225,72 +208,55 @@ export async function linkTransferPair(transaction1Id: string, transaction2Id: s
     throw new TransferLinkError("A transfer needs one outgoing and one incoming transaction.");
   }
   for (const t of [a, b]) {
-    if (t.transferPairId && t.transferPairId !== (t.id === a.id ? b.id : a.id)) {
+    const existing = t.transferAsOutgoing ?? t.transferAsIncoming;
+    // Already this exact pair: re-linking is a no-op rather than an error, so
+    // re-running the auto-matcher doesn't fail on work it already did.
+    if (existing && existing.outgoingId !== a.id && existing.outgoingId !== b.id) {
+      throw new TransferLinkError("One of those is already matched to something else — unlink it first.");
+    }
+    if (existing && (existing.incomingId !== a.id && existing.incomingId !== b.id)) {
       throw new TransferLinkError("One of those is already matched to something else — unlink it first.");
     }
   }
 
+  const outgoing = isOutflow(a.amountCents) ? a : b;
+  const incoming = isOutflow(a.amountCents) ? b : a;
+  if (outgoing.transferAsOutgoing && incoming.transferAsIncoming) return; // already this pair
+
   const transferCategory = await prisma.category.findFirst({ where: { isTransfer: true } });
 
-  // Update both transactions to link to each other and set category to Transfer
-  await prisma.transaction.update({
-    where: { id: transaction1Id },
-    data: {
-      transferPairId: transaction2Id,
-      categoryId: transferCategory?.id || null,
-      kind: "transfer",
-    },
-  });
-
-  await prisma.transaction.update({
-    where: { id: transaction2Id },
-    data: {
-      transferPairId: transaction1Id,
-      categoryId: transferCategory?.id || null,
-      kind: "transfer",
-    },
-  });
+  await prisma.$transaction([
+    prisma.transfer.create({ data: { outgoingId: outgoing.id, incomingId: incoming.id } }),
+    prisma.transaction.updateMany({
+      where: { id: { in: [outgoing.id, incoming.id] } },
+      data: { categoryId: transferCategory?.id || null, kind: "transfer" },
+    }),
+  ]);
 }
 
-// Unlink a transfer pair
+// Undo a match from either side. Deleting the transfer row dissolves the pair
+// outright — there's no second pointer that could be missed.
 export async function unlinkTransferPair(transactionId: string) {
-  const transaction = await prisma.transaction.findUnique({
-    where: { id: transactionId },
+  const transfer = await prisma.transfer.findFirst({
+    where: { OR: [{ outgoingId: transactionId }, { incomingId: transactionId }] },
+    include: { outgoing: true, incoming: true },
   });
-
-  if (!transaction?.transferPairId) {
-    return;
-  }
-
-  const counterpart = await prisma.transaction.findUnique({
-    where: { id: transaction.transferPairId },
-    select: { id: true, amountCents: true },
-  });
+  if (!transfer) return;
 
   // Each leg reverts by its own direction. Forcing both to "expense" would turn
   // the inflow into a negative expense that silently cancels out the outflow,
   // leaving total spending unchanged after breaking the pair.
-  const kindByDirection = (amount: number) => (isInflow(amount) ? "income" : "expense");
-
-  await prisma.transaction.update({
-    where: { id: transactionId },
-    data: {
-      transferPairId: null,
-      categoryId: null,
-      kind: kindByDirection(transaction.amountCents),
-    },
-  });
-
-  if (counterpart) {
-    await prisma.transaction.update({
-      where: { id: counterpart.id },
-      data: {
-        transferPairId: null,
-        categoryId: null,
-        kind: kindByDirection(counterpart.amountCents),
-      },
-    });
-  }
+  await prisma.$transaction([
+    prisma.transfer.delete({ where: { id: transfer.id } }),
+    prisma.transaction.update({
+      where: { id: transfer.outgoing.id },
+      data: { categoryId: null, kind: "expense" },
+    }),
+    prisma.transaction.update({
+      where: { id: transfer.incoming.id },
+      data: { categoryId: null, kind: "income" },
+    }),
+  ]);
 }
 
 // Auto-detect and link high-confidence transfers.

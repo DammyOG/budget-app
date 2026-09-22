@@ -178,9 +178,53 @@ const MONTH = { start: "2026-09-01T00:00:00Z", end: "2026-10-01T00:00:00Z" };
   const stealAttempt = await rawPost("/transfers/link", { transaction1Id: feeOut.id, transaction2Id: b1.id });
   check("An already-matched leg can't be re-used", stealAttempt.status, 400);
 
-  console.log("\nMatched pairs are listed so a wrong one can be found:");
+  console.log("\nA transfer owns both legs, so half a pair can't exist:");
   const linkedPairs = await api("/transfers/linked");
-  check("Linked list has both legs of a pair", linkedPairs.every((p: any) => p.broken === false), true);
+  check(
+    "Every listed transfer has both sides",
+    linkedPairs.every((p: any) => p.outgoing?.id && p.incoming?.id),
+    true
+  );
+
+  // Under the old mutual-pointer model, deleting one leg left the other
+  // pointing at a transaction that no longer existed: excluded from spending,
+  // with nothing to collapse against. The transfer now owns both legs, so
+  // removing either dissolves the pair outright.
+  const orphanOut = await tx(checking, -300, "2026-09-25", "XFER ORPHAN OUT");
+  const orphanIn = await tx(savings, 300, "2026-09-25", "XFER ORPHAN IN");
+  await api("/transfers/link", {
+    method: "POST",
+    body: JSON.stringify({ transaction1Id: orphanOut.id, transaction2Id: orphanIn.id }),
+  });
+  const beforeDelete = (await api("/transfers/linked")).length;
+  await api(`/transactions/${orphanIn.id}`, { method: "DELETE" });
+  const afterDelete = await api("/transfers/linked");
+  check("Deleting one leg removes the transfer", afterDelete.length, beforeDelete - 1);
+  check("No half-pair is left behind", afterDelete.every((p: any) => p.outgoing?.id && p.incoming?.id), true);
+
+  // The surviving leg has to start counting as spending again, not linger in
+  // the transfer category with no counterpart.
+  const survivor = (await api(`/transactions?limit=200&accountId=${checking.id}`)).transactions.find(
+    (t: any) => t.id === orphanOut.id
+  );
+  check("The surviving leg is no longer marked a transfer", survivor?.transferPairId ?? null, null);
+  // The pointer being gone isn't enough: if kind stays "transfer" the leg is
+  // still excluded from spending, just with nothing left to explain why.
+  check("The surviving leg counts as spending again", survivor?.kind, "expense");
+
+  // And an orphaned *inflow* has to revert to income, not expense — a
+  // negative expense would silently cancel out real spending.
+  const orphanOut2 = await tx(checking, -400, "2026-09-26", "XFER ORPHAN OUT 2");
+  const orphanIn2 = await tx(savings, 400, "2026-09-26", "XFER ORPHAN IN 2");
+  await api("/transfers/link", {
+    method: "POST",
+    body: JSON.stringify({ transaction1Id: orphanOut2.id, transaction2Id: orphanIn2.id }),
+  });
+  await api(`/transactions/${orphanOut2.id}`, { method: "DELETE" });
+  const survivorIn = (await api(`/transactions?limit=200&accountId=${savings.id}`)).transactions.find(
+    (t: any) => t.id === orphanIn2.id
+  );
+  check("An orphaned inflow reverts to income", survivorIn?.kind, "income");
 
   for (const a of [checking, savings, card]) {
     await api(`/accounts/${a.id}`, { method: "DELETE" });

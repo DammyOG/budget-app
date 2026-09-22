@@ -22,7 +22,7 @@ const NAMED_RAILS = /zelle|venmo|cash app|cashapp|paypal|apple cash/i;
 export async function fixPaymentThankYou() {
   const transactions = await prisma.transaction.findMany({
     where: { OR: AMBIGUOUS_DESCRIPTORS.map((d) => ({ name: { contains: d } })) },
-    include: { category: true },
+    include: { category: true, transferAsOutgoing: true, transferAsIncoming: true },
   });
 
   let fixed = 0;
@@ -37,7 +37,7 @@ export async function fixPaymentThankYou() {
     // Settled by a pairing: the match is a stronger statement about what this
     // is than any guess from the descriptor, and clearing it would undo work
     // the user already did.
-    if (tx.transferPairId) continue;
+    if (tx.transferAsOutgoing || tx.transferAsIncoming) continue;
 
     // Marked as a transfer by its category, which is the correct answer for a
     // card payment — leave it be rather than clearing and re-guessing.

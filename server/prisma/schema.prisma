@@ -92,7 +92,8 @@ model Transaction {
   pending              Boolean @default(false)
   isManual            Boolean  @default(false)
   notes               String?
-  transferPairId      String?  // Links to another transaction if this is part of an inter-account transfer
+  // Which transfer this is a leg of, if any. Read through the two relations
+  // below rather than stored here: see the Transfer model.
 
   // What kind of money movement this is, independent of its category.
   // Transfers are neither earning nor spending, so a single field beats
@@ -107,14 +108,43 @@ model Transaction {
   account  Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
   category Category? @relation(fields: [categoryId], references: [id])
 
+  // A transaction can be the sending side of at most one transfer and the
+  // receiving side of at most one, enforced by the unique columns on Transfer.
+  transferAsOutgoing Transfer? @relation("TransferOutgoing")
+  transferAsIncoming Transfer? @relation("TransferIncoming")
+
   @@index([accountId])
   @@index([categoryId])
   @@index([date])
-  @@index([transferPairId])
   @@index([kind])
   @@index([absAmountCents])
   // Duplicate detection groups on exactly these four.
   @@index([accountId, name, amountCents, date])
+}
+
+// One movement of money between two of the user's own accounts, owning both
+// of its legs.
+//
+// This was previously a transferPairId on each transaction pointing at the
+// other, which let a half-linked state exist: leg A pointing at B while B
+// pointed at nothing, or at a third transaction. That state is excluded from
+// income and spending but has nothing to collapse against, and the code grew
+// guards for it — a "broken" flag in the pairs listing, a check that a leg
+// wasn't already matched elsewhere. Here the pair is one row, so there is no
+// way to write down half of one.
+//
+// Both sides are required and unique: a transaction can be the sending side
+// of at most one transfer and the receiving side of at most one. Deleting
+// either transaction cascades the transfer away, which dissolves the pair
+// rather than leaving a leg pointing at something that no longer exists.
+model Transfer {
+  id         String   @id @default(cuid())
+  outgoingId String   @unique
+  incomingId String   @unique
+  createdAt  DateTime @default(now())
+
+  outgoing Transaction @relation("TransferOutgoing", fields: [outgoingId], references: [id], onDelete: Cascade)
+  incoming Transaction @relation("TransferIncoming", fields: [incomingId], references: [id], onDelete: Cascade)
 }
 
 model Budget {

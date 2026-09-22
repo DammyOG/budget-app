@@ -1,3 +1,4 @@
+import { prisma } from "../db";
 import { fixPaymentThankYou } from "./fixMiscategorized";
 import { autoCategorizeAll } from "./autoCategorize";
 import { autoLinkTransfers } from "./detectTransfers";
@@ -17,6 +18,33 @@ import { autoLinkTransfers } from "./detectTransfers";
 // a new transaction's counterpart may be an older one, so that pass is not
 // narrowed further.
 export async function reconcile(since?: Date) {
+  // Repair any leg left marked as a transfer with no transfer to belong to.
+  // A transaction deleted outside the normal path takes its transfer row with
+  // it, and the survivor would otherwise sit excluded from spending forever.
+  //
+  // Each reverts by its own direction. Forcing them all to "expense" would
+  // turn an orphaned inflow into a negative expense that cancels out real
+  // spending, leaving the total unchanged and the problem invisible.
+  const orphanWhere = {
+    kind: "transfer",
+    transferAsOutgoing: { is: null },
+    transferAsIncoming: { is: null },
+  } as const;
+  const [revertedOut, revertedIn] = await prisma.$transaction([
+    prisma.transaction.updateMany({
+      where: { ...orphanWhere, amountCents: { lt: 0 } },
+      data: { kind: "expense", categoryId: null },
+    }),
+    prisma.transaction.updateMany({
+      where: { ...orphanWhere, amountCents: { gt: 0 } },
+      data: { kind: "income", categoryId: null },
+    }),
+  ]);
+  const orphaned = revertedOut.count + revertedIn.count;
+  if (orphaned > 0) {
+    console.log(`Reverted ${orphaned} transaction(s) left marked as transfers with no counterpart`);
+  }
+
   // Credit-card "payment thank you" rows first: they're transfers wearing a
   // description that reads like income.
   await fixPaymentThankYou();

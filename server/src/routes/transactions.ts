@@ -84,12 +84,10 @@ router.get("/", async (req, res) => {
   // like money vanished.
   const collapsing = collapseTransfers !== "false" && !accountId;
   if (collapsing) {
-    // Hide the receiving leg and keep the sending one. Amounts are negative
-    // for money out and positive for money in, so the inflow is the positive
-    // side — this is a raw sign test in a query rather than a call to
-    // isInflow(), which is exactly why the sign convention needed a single
-    // definition instead of being restated at each site.
-    where.NOT = { AND: [{ transferPairId: { not: null } }, { amountCents: { gt: 0 } }] };
+    // Hide the receiving leg and keep the sending one. Now stated directly —
+    // "is the incoming side of a transfer" — instead of inferred from a sign
+    // test plus a non-null pair id.
+    where.transferAsIncoming = { is: null };
   }
 
   const sortField = VALID_SORTS.has(String(sort)) ? String(sort) : "date";
@@ -122,27 +120,26 @@ router.get("/", async (req, res) => {
       orderBy: buildOrderBy(sortField, sortDir),
       take,
       skip,
-      include: { account: { select: { name: true, institutionName: true } }, category: true },
+      include: {
+        account: { select: { name: true, institutionName: true } },
+        category: true,
+        transferAsOutgoing: { include: { incoming: { include: { account: { select: { name: true } } } } } },
+        transferAsIncoming: { include: { outgoing: { include: { account: { select: { name: true } } } } } },
+      },
     }),
     prisma.transaction.count({ where }),
   ]);
 
-  // The hidden half of each collapsed pair, so the visible row can say where
+  // The other half of each collapsed pair, so the visible row can say where
   // the money actually went instead of just "Transfer".
-  const pairIds = rows.map((t) => t.transferPairId).filter((id): id is string => !!id);
-  const counterparts = pairIds.length
-    ? await prisma.transaction.findMany({
-        where: { id: { in: pairIds } },
-        select: { id: true, amountCents: true, account: { select: { name: true, institutionName: true } } },
-      })
-    : [];
-  const counterpartById = new Map(counterparts.map((c) => [c.id, c]));
-
-  const transactions = rows.map((tx) => {
-    const counterpart = tx.transferPairId ? counterpartById.get(tx.transferPairId) : undefined;
+  const transactions = rows.map(({ transferAsOutgoing, transferAsIncoming, ...tx }) => {
+    const counterpart = transferAsOutgoing?.incoming ?? transferAsIncoming?.outgoing ?? null;
     return {
       ...tx,
       isDuplicate: isDuplicate(tx, duplicateKeys),
+      // Kept in the response because the client uses it to tell a matched
+      // transfer from an unmatched one.
+      transferPairId: counterpart?.id ?? null,
       transferCounterpartAccount: counterpart?.account.name ?? null,
     };
   });
@@ -199,7 +196,12 @@ router.patch("/:id", async (req, res) => {
 
   // Reclassifying away from transfer has to break the pair, or the counterpart
   // stays linked to a transaction that's no longer a transfer.
-  if (kind !== undefined && kind !== "transfer" && oldTransaction?.transferPairId) {
+  const wasTransferLeg =
+    oldTransaction &&
+    (await prisma.transfer.count({
+      where: { OR: [{ outgoingId: oldTransaction.id }, { incomingId: oldTransaction.id }] },
+    })) > 0;
+  if (kind !== undefined && kind !== "transfer" && wasTransferLeg) {
     const { unlinkTransferPair } = await import("../services/detectTransfers");
     await unlinkTransferPair(req.params.id);
   }
@@ -236,6 +238,12 @@ router.patch("/:id", async (req, res) => {
 });
 
 router.delete("/:id", async (req, res) => {
+  // Unmatch first if this is half of a transfer. Deleting it outright cascades
+  // the transfer away but leaves the other leg still marked kind="transfer"
+  // with the transfer category — excluded from spending forever, with nothing
+  // left to explain why.
+  const { unlinkTransferPair } = await import("../services/detectTransfers");
+  await unlinkTransferPair(req.params.id);
   await prisma.transaction.delete({ where: { id: req.params.id } });
   res.json({ success: true });
 });
