@@ -127,9 +127,24 @@ export default function Dashboard() {
             ]}
           />
 
-          <p className="px-1 text-xs text-slate-400">
-            Transfers between your own accounts (and credit card payments) are excluded from income and spending.
-          </p>
+          {/* Net worth comes from account balances; income and spending come
+              from transactions. When the second source is empty the dashboard
+              shows a healthy net worth beside three zeroes, which reads like
+              a bug rather than "nothing has synced yet". */}
+          {summary.netWorth !== 0 && summary.income === 0 && summary.spending === 0 ? (
+            <Card className="border-amber-200 bg-amber-50 text-sm text-amber-900">
+              Your balances are here, but no transactions have come through for this month — that's why income and
+              spending are zero.{" "}
+              <Link to="/transactions" className="font-medium underline">
+                Sync or add transactions
+              </Link>
+              .
+            </Card>
+          ) : (
+            <p className="px-1 text-xs text-slate-400">
+              Transfers between your own accounts (and credit card payments) are excluded from income and spending.
+            </p>
+          )}
 
           <Card>
             <SectionTitle

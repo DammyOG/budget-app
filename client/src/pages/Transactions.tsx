@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import {
   Account,
   api,
@@ -14,7 +14,7 @@ import {
 } from "../lib/api";
 import TransactionDetailModal from "../components/TransactionDetailModal";
 import { useToast } from "../components/ToastProvider";
-import { PageHeader } from "../components/ui";
+import { Button, PageHeader } from "../components/ui";
 
 const PAGE_SIZE = 100;
 
@@ -111,6 +111,82 @@ function TransactionRow({ tx, onOpen }: { tx: Transaction; onOpen: () => void })
         {formatSignedAmount(tx.amount)}
       </div>
     </button>
+  );
+}
+
+// Why the list is empty depends on what you actually have. Telling someone
+// with three linked banks to "link an account" sends them somewhere that
+// can't help; the real answer is usually that nothing has been synced, or
+// that their accounts are manual and never will sync.
+function EmptyTransactions({ accounts, onSynced }: { accounts: Account[]; onSynced: () => void }) {
+  const toast = useToast();
+  const [syncing, setSyncing] = useState(false);
+
+  if (accounts.length === 0) {
+    return (
+      <div>
+        <p className="font-medium text-slate-700">No accounts yet</p>
+        <p className="mx-auto mt-1 max-w-xs">
+          Link a bank on the{" "}
+          <Link to="/accounts" className="font-medium text-indigo-600">
+            Accounts
+          </Link>{" "}
+          page, or add one by hand.
+        </p>
+      </div>
+    );
+  }
+
+  const linked = accounts.filter((a) => !a.isManual);
+  const needsReauth = linked.filter((a) => a.plaidItem?.needsReauth);
+
+  const sync = async () => {
+    setSyncing(true);
+    try {
+      const { results } = await api.syncAll();
+      const failed = results.filter((r: any) => r.error);
+      if (failed.length) toast.error(`${failed.length} account${failed.length > 1 ? "s" : ""} failed to sync`);
+      else toast.success("Synced");
+      onSynced();
+    } catch (err: any) {
+      toast.error(err.message);
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  return (
+    <div>
+      <p className="font-medium text-slate-700">No transactions yet</p>
+      {linked.length === 0 ? (
+        <p className="mx-auto mt-1 max-w-xs">
+          All {accounts.length} of your accounts are manual, so they only carry a balance — that's why a net worth
+          shows but there's no history here. Link a bank to pull transactions in.
+        </p>
+      ) : needsReauth.length > 0 ? (
+        <p className="mx-auto mt-1 max-w-xs">
+          {needsReauth.length} account{needsReauth.length > 1 ? "s need" : " needs"} to be reconnected before
+          transactions can come through.
+        </p>
+      ) : (
+        <p className="mx-auto mt-1 max-w-xs">
+          Your accounts are linked but nothing has come through yet. A first sync can take a few minutes.
+        </p>
+      )}
+      <div className="mt-4 flex justify-center gap-2">
+        {linked.length > 0 && (
+          <Button variant="primary" size="sm" onClick={sync} disabled={syncing}>
+            {syncing ? "Syncing…" : "Sync now"}
+          </Button>
+        )}
+        <Link
+          to="/accounts"
+          className="inline-flex min-h-[40px] items-center rounded-xl border border-slate-300 px-3 text-xs font-medium text-slate-700"
+        >
+          Manage accounts
+        </Link>
+      </div>
+    </div>
   );
 }
 
@@ -600,11 +676,18 @@ export default function Transactions() {
 
       <div className="rounded-lg border bg-white overflow-hidden">
         {transactions.length === 0 ? (
-          <p className="px-4 py-10 text-center text-slate-500 text-sm">
-            {total === 0 && !search && activeFilterCount === 0
-              ? "No transactions yet. Link an account and sync to pull in history."
-              : "Nothing matches your search or filters."}
-          </p>
+          <div className="px-4 py-10 text-center text-sm text-slate-500">
+            {total > 0 || search || activeFilterCount > 0 ? (
+              "Nothing matches your search or filters."
+            ) : (
+              // "Link an account" was shown whenever the list was empty, even
+              // to someone who already had accounts — which is confusing when
+              // the dashboard is showing a net worth from those same accounts.
+              // Balances and transactions come from different places: an
+              // account can have a balance and no history at all.
+              <EmptyTransactions accounts={accounts} onSynced={load} />
+            )}
+          </div>
         ) : groups ? (
           groups.map(([date, rows]) => (
             <div key={date}>

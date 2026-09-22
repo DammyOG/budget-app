@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, formatSignedAmount, formatTransactionDate, Transaction, Category } from "../lib/api";
+import { Link } from "react-router-dom";
 import { useToast } from "../components/ToastProvider";
 import { Button, EmptyState, PageHeader, Spinner, StatRow } from "../components/ui";
 
@@ -13,6 +14,7 @@ export default function ReviewCategories() {
   const [showCustomCategory, setShowCustomCategory] = useState(false);
   const [selectedCategoryId, setSelectedCategoryId] = useState("");
   const [stats, setStats] = useState({ reviewed: 0, corrected: 0, total: 0 });
+  const [accountCount, setAccountCount] = useState(0);
 
   useEffect(() => {
     loadData();
@@ -21,12 +23,16 @@ export default function ReviewCategories() {
   async function loadData() {
     setLoading(true);
     try {
-      const [{ transactions: txs }, cats] = await Promise.all([
+      const [{ transactions: txs }, cats, accts] = await Promise.all([
         // Review needs the full set to prioritize uncategorized rows across
         // everything, not just the most recent page.
         api.getTransactions({ limit: "100000" }),
         api.getCategories(),
+        // Only to tell "you have no accounts" apart from "your accounts have
+        // no transactions" in the empty state.
+        api.getAccounts(),
       ]);
+      setAccountCount(accts.length);
 
       // Get all transactions, prioritize uncategorized
       const uncategorized = txs.filter((t) => !t.categoryId);
@@ -107,10 +113,33 @@ export default function ReviewCategories() {
     return (
       <div>
         <PageHeader title="Review" />
+        {/* This page needs transactions, not accounts. Saying "link an
+            account" to someone who already has them — and can see a net
+            worth built from them on the dashboard — points at the wrong
+            problem. */}
         <EmptyState
           icon="📭"
           title="Nothing to review"
-          hint="Link a bank account and sync transactions to start training the categorizer."
+          hint={
+            accountCount === 0 ? (
+              <>
+                Link a bank on the{" "}
+                <Link to="/accounts" className="font-medium text-indigo-600">
+                  Accounts
+                </Link>{" "}
+                page first.
+              </>
+            ) : (
+              <>
+                There are no transactions to review yet. Balances and transaction history are separate, so your
+                accounts can show a net worth before any history arrives — try syncing from{" "}
+                <Link to="/transactions" className="font-medium text-indigo-600">
+                  Transactions
+                </Link>
+                .
+              </>
+            )
+          }
         />
       </div>
     );
