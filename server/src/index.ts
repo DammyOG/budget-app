@@ -69,7 +69,36 @@ async function main() {
   app.use(errorHandler);
 
   const port = Number(process.env.PORT) || 4000;
-  app.listen(port, () => console.log(`Budget app server listening on http://localhost:${port}`));
+  const server = app.listen(port, () =>
+    console.log(`Budget app server listening on http://localhost:${port}`)
+  );
+
+  // Without a handler this is an unhandled 'error' event: a 25-line stack
+  // ending in EADDRINUSE, which looks like the app is broken when in fact
+  // another copy is already running — usually one left behind in a different
+  // terminal or tmux pane.
+  server.on("error", (err: NodeJS.ErrnoException) => {
+    if (err.code === "EADDRINUSE") {
+      console.error(
+        `\nPort ${port} is already in use — another copy of this server is probably still running.\n` +
+          `  Find it:  lsof -i :${port}     (or: ss -ltnp | grep ${port})\n` +
+          `  Stop it:  kill $(lsof -t -i :${port})\n` +
+          `  Or run this one elsewhere:  PORT=4001 npm run dev\n`
+      );
+      process.exit(1);
+    }
+    throw err;
+  });
+
+  // tsx watch supervises this process; exiting promptly on a signal keeps
+  // Ctrl+C from leaving the port held by a lingering child.
+  for (const signal of ["SIGINT", "SIGTERM"] as const) {
+    process.on(signal, () => {
+      server.close(() => process.exit(0));
+      // Don't let an open keep-alive connection hold the shutdown open.
+      setTimeout(() => process.exit(0), 2000).unref();
+    });
+  }
 }
 
 main().catch((err) => {
